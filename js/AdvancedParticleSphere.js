@@ -290,8 +290,10 @@ class AdvancedParticleSphere {
         }
         this.galaxyGeometry = new THREE.BufferGeometry();
         const posAttr = new THREE.BufferAttribute(positions, 3);
-        posAttr.setUsage(THREE.DynamicDrawUsage);
+        if (posAttr.setUsage) posAttr.setUsage(THREE.DynamicDrawUsage);
+        else if (typeof THREE.DynamicDrawUsage !== 'undefined') posAttr.usage = THREE.DynamicDrawUsage;
         this.galaxyGeometry.setAttribute('position', posAttr);
+        this.galaxyGeometry.computeBoundingSphere();
         
         const uniforms = {
             u_time: { value: 0 },
@@ -309,7 +311,7 @@ class AdvancedParticleSphere {
             u_mouseActive: { value: 0 },
             u_mouseHaloRadius: { value: this.breathingGalaxyParams.mouseHaloRadius },
             u_mouseHaloStrength: { value: this.breathingGalaxyParams.mouseHaloStrength },
-            u_basePointSize: { value: Math.max(24, this.particleSize * 400) }
+            u_basePointSize: { value: Math.max(48, this.particleSize * 500) }
         };
         
         this.pointsMaterial = new THREE.ShaderMaterial({
@@ -318,7 +320,8 @@ class AdvancedParticleSphere {
             fragmentShader: this.getGalaxyFragmentShader(),
             transparent: true,
             depthWrite: false,
-            blending: THREE.AdditiveBlending
+            depthTest: true,
+            blending: THREE.NormalBlending
         });
         
         this.pointsMesh = new THREE.Points(this.galaxyGeometry, this.pointsMaterial);
@@ -368,8 +371,8 @@ class AdvancedParticleSphere {
             
             void main() {
                 vec3 p = position;
-                vec3 n = normalize(p);
                 float radius = length(p);
+                vec3 n = radius < 0.0001 ? vec3(1.0, 0.0, 0.0) : normalize(p);
                 
                 // Breathing: pulse radius in and out
                 float breath = u_breathEnabled * sin(u_time * u_breathSpeed) * u_breathAmp;
@@ -403,6 +406,7 @@ class AdvancedParticleSphere {
      */
     getGalaxyFragmentShader() {
         return `
+            precision mediump float;
             uniform float u_energy;
             uniform vec2 u_mouse;
             uniform float u_mouseActive;
@@ -672,24 +676,30 @@ class AdvancedParticleSphere {
         const dt = Math.min(0.016, this.clock.getDelta());
         
         // Breathing Galaxy mode: feed rest positions to Points mesh and hide mesh group
-        if (this.mode === 'breathingGalaxy' && this.pointsMesh && this.galaxyGeometry && this.particles.length === this.particleCount) {
-            this.particleGroup.visible = false;
-            this.pointsMesh.visible = true;
-            const posAttr = this.galaxyGeometry.getAttribute('position');
-            if (posAttr) {
-            for (let i = 0; i < this.particleCount; i++) {
-                const ud = this.particles[i].userData;
-                let displayRest = ud.restPosition.clone();
-                if (this.currentShape === 'ring') {
-                    const cos = Math.cos(this.shapeRotation);
-                    const sin = Math.sin(this.shapeRotation);
-                    const x = displayRest.x, y = displayRest.y;
-                    displayRest.x = x * cos - y * sin;
-                    displayRest.y = x * sin + y * cos;
-                }
-                posAttr.setXYZ(i, displayRest.x, displayRest.y, displayRest.z);
+        if (this.mode === 'breathingGalaxy') {
+            // Lazy-create points mesh if missing (e.g. after error or late init)
+            if (!this.pointsMesh || !this.galaxyGeometry) {
+                this.createGalaxyPoints();
             }
-            posAttr.needsUpdate = true;
+            if (this.pointsMesh && this.galaxyGeometry && this.particles.length > 0 && this.particles.length === this.particleCount) {
+                this.particleGroup.visible = false;
+                this.pointsMesh.visible = true;
+                const posAttr = this.galaxyGeometry.getAttribute('position');
+                if (posAttr && posAttr.count >= this.particleCount) {
+                    for (let i = 0; i < this.particleCount; i++) {
+                        const ud = this.particles[i].userData;
+                        let displayRest = ud.restPosition.clone();
+                        if (this.currentShape === 'ring') {
+                            const cos = Math.cos(this.shapeRotation);
+                            const sin = Math.sin(this.shapeRotation);
+                            const x = displayRest.x, y = displayRest.y;
+                            displayRest.x = x * cos - y * sin;
+                            displayRest.y = x * sin + y * cos;
+                        }
+                        posAttr.setXYZ(i, displayRest.x, displayRest.y, displayRest.z);
+                    }
+                    posAttr.needsUpdate = true;
+                }
             }
             if (this.currentShape === 'ring') this.shapeRotation += 0.02;
             return;
@@ -862,6 +872,7 @@ class AdvancedParticleSphere {
             u.u_energy.value = this.breathingGalaxyParams.energy;
             u.u_mouseHaloRadius.value = this.breathingGalaxyParams.mouseHaloRadius;
             u.u_mouseHaloStrength.value = this.breathingGalaxyParams.mouseHaloStrength;
+            u.u_basePointSize.value = Math.max(48, this.particleSize * 500);
         }
         
         // Update controls
