@@ -4,15 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Advanced 3D Particle Sphere Visualizer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --app-font: 'Space Mono', monospace;
+        }
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-        
-        body {
-            font-family: 'JetBrains Mono', 'Geist Mono', 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+        html, body {
+            font-family: var(--app-font);
             background: #000000; /* Pure black space background */
             overflow: hidden;
             color: white;
@@ -22,6 +27,12 @@
             position: relative;
             width: 100vw;
             height: 100vh;
+            z-index: 0;
+            cursor: default;
+        }
+        
+        #container canvas {
+            cursor: default;
         }
         
 
@@ -36,7 +47,14 @@
             font-weight: 500;
         }
         
-        /* Control Panel Styles */
+        /* Shared motion + font. To change font only: edit --app-font and the <link> in <head>. */
+        :root {
+            --panel-ease: cubic-bezier(0.33, 1, 0.68, 1);
+            --panel-ease-out: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            --panel-duration: 0.32s;
+            --panel-duration-fast: 0.22s;
+        }
+        
         .control-panel-container {
             position: fixed;
             top: 20px;
@@ -44,162 +62,261 @@
             z-index: 1000;
         }
         
+        /* When panel is open, expand container so it receives pointer events over full panel area */
+        .control-panel-container.panel-expanded,
+        .control-panel-container:has(.control-panel-shell.open) {
+            width: 340px;
+            height: 65vh;
+            max-height: 520px;
+            min-height: 280px;
+        }
+        
         .control-panel-cta {
-            background: #1a1a1a;
-            color: #ffffff;
-            border: 2px solid #666666;
-            padding: 14px 28px;
-            border-radius: 0;
-            font-size: 14px;
+            position: relative;
+            z-index: 2;
+            background: hsl(240 6% 10%);
+            color: hsl(0 0% 98%);
+            border: 1px solid hsl(240 4% 16%);
+            padding: 12px 16px;
+            border-radius: 10px;
+            font-size: 13px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.3s ease;
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-            font-family: 'JetBrains Mono', monospace;
-            line-height: 24px;
+            transition: transform var(--panel-duration) var(--panel-ease),
+                        background var(--panel-duration-fast) var(--panel-ease),
+                        border-color var(--panel-duration-fast) var(--panel-ease),
+                        box-shadow var(--panel-duration-fast) var(--panel-ease),
+                        opacity var(--panel-duration-fast) var(--panel-ease);
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.04);
+            font-family: var(--app-font);
+            letter-spacing: -0.01em;
+            backdrop-filter: blur(16px);
         }
         
         .control-panel-cta:hover {
+            background: hsl(240 4% 14%);
+            border-color: hsl(240 4% 20%);
             transform: translateY(-2px);
-            background: #333333;
-            color: #ffffff;
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.06);
+        }
+        
+        .control-panel-cta:active {
+            transform: translateY(-1px) scale(0.98);
+        }
+        
+        /* CTA fades out and scales down as panel grows from same spot */
+        .control-panel-cta.panel-opening {
+            opacity: 0;
+            pointer-events: none;
+            transform: scale(0.96);
+            transition: opacity 0.12s var(--panel-ease),
+                        transform 0.2s var(--panel-ease);
+        }
+        
+        /* CTA reappears as panel shrinks into it */
+        .control-panel-cta.animating-in {
+            opacity: 0;
+            transform: scale(0.96);
+            pointer-events: none;
+            transition: opacity var(--panel-duration-fast) var(--panel-ease),
+                        transform var(--panel-duration) var(--panel-ease);
+        }
+        
+        .control-panel-cta.animating-in.visible {
+            opacity: 1;
+            transform: scale(1);
+            pointer-events: auto;
+        }
+        
+        .control-panel-shell {
+            position: absolute;
+            top: 0;
+            right: 0;
+            z-index: 1;
+            width: 340px;
+            height: 65vh;
+            max-height: 520px;
+            min-height: 280px;
+            transform-origin: 100% 0;
+            pointer-events: none;
+            visibility: hidden;
+            transition: transform var(--panel-duration) var(--panel-ease),
+                        opacity var(--panel-duration) var(--panel-ease);
+            opacity: 0;
+        }
+        
+        /* Visible at CTA size before expanding (JS sets inline transform/opacity) */
+        .control-panel-shell.panel-revealing {
+            visibility: visible;
+        }
+        
+        .control-panel-shell.open {
+            transform: scale(1, 1);
+            opacity: 1;
+            pointer-events: all;
+            visibility: visible;
+        }
+        
+        /* Closing: scale down into CTA size (opacity stays 1 until swap) */
+        .control-panel-shell.panel-collapsing {
+            opacity: 1;
         }
         
         .control-panel {
             position: absolute;
-            top: 0;
-            right: 0;
-            width: 360px;
-            background: rgba(26, 26, 26, 0.95);
-            backdrop-filter: blur(20px);
-            border: 2px solid #666666;
-            border-radius: 0;
-            padding: 24px;
-            box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
-            transform: translateX(100%);
-            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            opacity: 0;
-            pointer-events: none;
-            max-height: 90vh;
-            overflow-y: auto;
-            font-family: 'JetBrains Mono', monospace;
-            font-weight: 400;
-            line-height: 24px;
-            letter-spacing: 0.04em;
-            text-transform: uppercase;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            background: hsl(240 6% 10%);
+            backdrop-filter: blur(16px);
+            border: 1px solid hsl(240 4% 16%);
+            border-radius: 10px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.04);
+            font-family: var(--app-font);
+            overflow: hidden;
+            pointer-events: auto;
         }
         
-        .control-panel.open {
-            transform: translateX(0);
+        .control-panel-inner {
+            flex: 1 1 0;
+            min-height: 0;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 12px 16px 20px;
+            -webkit-overflow-scrolling: touch;
+            pointer-events: auto;
+        }
+        
+        .control-panel-content {
+            opacity: 0;
+            transform: translateY(8px);
+            transition: opacity var(--panel-duration-fast) var(--panel-ease) 0.08s,
+                        transform var(--panel-duration) var(--panel-ease) 0.08s;
+        }
+        
+        .control-panel-shell.open .control-panel-content {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        .control-panel-shell.closing .control-panel-content {
+            opacity: 0;
+            transform: translateY(6px);
+            transition: opacity 0.14s var(--panel-ease-out),
+                        transform 0.14s var(--panel-ease-out);
+            transition-delay: 0s;
+        }
+        
+        .control-panel-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.45);
+            opacity: 0;
+            pointer-events: none;
+            z-index: 999;
+            transition: opacity var(--panel-duration) var(--panel-ease);
+        }
+        
+        .control-panel-backdrop.visible {
             opacity: 1;
             pointer-events: all;
+        }
+        
+        body.panel-open #container {
+            transition: transform var(--panel-duration) var(--panel-ease);
+        }
+        
+        body.panel-open.panel-focused #container {
+            transform: scale(0.985);
         }
         
         .control-panel-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 24px;
-            padding-bottom: 16px;
-            border-bottom: 2px solid #666666;
+            padding: 12px 16px;
+            border-bottom: 1px solid hsl(240 4% 16%);
+            flex-shrink: 0;
         }
         
         .control-panel-title {
-            font-size: 18px;
-            font-weight: 400;
-            color: #ffffff;
-            line-height: 24px;
-            letter-spacing: 0.04em;
-            text-transform: uppercase;
+            font-size: 13px;
+            font-weight: 600;
+            color: hsl(0 0% 98%);
+            letter-spacing: 0.02em;
         }
         
         .close-button {
-            background: none;
+            background: transparent;
             border: none;
-            color: #cccccc;
-            font-size: 24px;
-            cursor: pointer;
-            padding: 4px;
-            border-radius: 0;
-            transition: all 0.2s ease;
+            color: hsl(240 5% 60%);
+            font-size: 20px;
             line-height: 1;
-            font-family: 'JetBrains Mono', monospace;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 6px;
+            transition: color 0.15s, background 0.15s;
         }
         
         .close-button:hover {
-            color: #ffffff;
-            background: rgba(255, 255, 255, 0.1);
+            color: hsl(0 0% 98%);
+            background: hsl(240 4% 18%);
         }
         
         .control-group {
-            margin-bottom: 24px;
+            margin-bottom: 16px;
         }
+        
+        .control-group:last-child { margin-bottom: 0; }
         
         .control-group-title {
-            font-size: 14px;
-            font-weight: 400;
-            color: #ffffff;
-            margin-bottom: 16px;
+            font-size: 10px;
+            font-weight: 600;
+            color: hsl(240 5% 55%);
+            margin-bottom: 8px;
+            letter-spacing: 0.06em;
             text-transform: uppercase;
-            letter-spacing: 0.04em;
-            line-height: 24px;
-            display: flex;
-            align-items: center;
-        }
-        
-        .control-group-title::before {
-            content: '';
-            width: 3px;
-            height: 16px;
-            background: #666666;
-            margin-right: 8px;
-            border-radius: 2px;
         }
         
         .control-item {
-            margin-bottom: 20px;
+            margin-bottom: 14px;
         }
+        
+        .control-item:last-child { margin-bottom: 0; }
         
         .control-label {
             display: block;
             font-size: 12px;
-            color: #ffffff;
-            margin-bottom: 8px;
-            font-weight: 400;
-            line-height: 24px;
-            letter-spacing: 0.04em;
-            text-transform: uppercase;
+            font-weight: 500;
+            color: hsl(0 0% 92%);
+            margin-bottom: 6px;
+            letter-spacing: 0.02em;
         }
         
         .control-value {
-            font-size: 12px;
-            color: #ffffff;
-            text-align: center;
-            margin-top: 6px;
-            font-weight: 400;
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid #666666;
+            font-size: 11px;
+            font-weight: 600;
+            color: hsl(240 5% 70%);
+            background: hsl(240 4% 14%);
+            border: 1px solid hsl(240 4% 20%);
             padding: 4px 8px;
-            border-radius: 0;
+            border-radius: 4px;
+            min-width: 48px;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
             display: inline-block;
-            min-width: 60px;
-            line-height: 24px;
-            letter-spacing: 0.04em;
-            text-transform: uppercase;
+            margin-top: 6px;
         }
         
         .slider-container {
-            position: relative;
+            margin-top: 4px;
         }
         
         .slider {
             width: 100%;
-            height: 6px;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 3px;
+            height: 8px;
+            background: hsl(240 4% 18%);
+            border-radius: 4px;
             outline: none;
             -webkit-appearance: none;
             appearance: none;
@@ -210,65 +327,101 @@
             appearance: none;
             width: 18px;
             height: 18px;
-            background: #666666;
+            background: hsl(0 0% 98%);
             border-radius: 50%;
             cursor: pointer;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-            transition: all 0.2s ease;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+            transition: transform 0.12s ease, box-shadow 0.12s ease;
         }
         
         .slider::-webkit-slider-thumb:hover {
             transform: scale(1.1);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
         }
         
         .slider::-moz-range-thumb {
             width: 18px;
             height: 18px;
-            background: #666666;
+            background: hsl(0 0% 98%);
             border-radius: 50%;
             cursor: pointer;
             border: none;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
         }
         
-
+        .control-select {
+            width: 100%;
+            padding: 8px 12px;
+            font-size: 12px;
+            font-family: var(--app-font);
+            font-weight: 500;
+            color: hsl(0 0% 98%);
+            background: hsl(240 4% 14%);
+            border: 1px solid hsl(240 4% 20%);
+            border-radius: 6px;
+            cursor: pointer;
+            margin-top: 4px;
+        }
+        
+        .control-checkbox {
+            width: 16px;
+            height: 16px;
+            accent-color: hsl(240 5% 60%);
+            cursor: pointer;
+        }
+        
+        .mode-tiles {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-top: 6px;
+        }
+        .mode-tile {
+            padding: 12px 10px;
+            font-size: 11px;
+            font-family: var(--app-font);
+            font-weight: 600;
+            letter-spacing: 0.02em;
+            color: hsl(240 5% 65%);
+            background: hsl(240 4% 14%);
+            border: 1px solid hsl(240 4% 20%);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: color 0.15s, background 0.15s, border-color 0.15s;
+        }
+        .mode-tile:hover {
+            color: hsl(0 0% 92%);
+            background: hsl(240 4% 18%);
+            border-color: hsl(240 4% 25%);
+        }
+        .mode-tile.active {
+            color: hsl(0 0% 98%);
+            background: hsl(240 4% 22%);
+            border-color: hsl(240 5% 45%);
+        }
+        .mode-options { display: none; }
+        .mode-options.visible { display: block; }
         
         .fps-display {
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 8px;
-            padding: 12px 16px;
+            background: hsl(240 4% 14%);
+            border: 1px solid hsl(240 4% 18%);
+            border-radius: 6px;
+            padding: 10px 12px;
             text-align: center;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 600;
-            color: #ffffff;
+            color: hsl(0 0% 98%);
         }
         
-        .fps-value {
-            font-size: 18px;
-            font-weight: 700;
-            color: #ffffff;
-        }
+        .fps-value { font-size: 16px; font-weight: 700; color: hsl(0 0% 98%); }
         
-        /* Scrollbar styling */
-        .control-panel::-webkit-scrollbar {
-            width: 6px;
-        }
-        
-        .control-panel::-webkit-scrollbar-track {
-            background: rgba(255, 255, 255, 0.1);
+        .control-panel-inner::-webkit-scrollbar { width: 6px; }
+        .control-panel-inner::-webkit-scrollbar-track { background: hsl(240 4% 12%); border-radius: 3px; }
+        .control-panel-inner::-webkit-scrollbar-thumb {
+            background: hsl(240 4% 28%);
             border-radius: 3px;
         }
-        
-        .control-panel::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.3);
-            border-radius: 3px;
-        }
-        
-        .control-panel::-webkit-scrollbar-thumb:hover {
-            background: rgba(255, 255, 255, 0.5);
-        }
+        .control-panel-inner::-webkit-scrollbar-thumb:hover { background: hsl(240 4% 38%); }
     </style>
 </head>
 <body>
@@ -276,20 +429,105 @@
         <div class="loading" id="loading">Loading...</div>
     </div>
     
-    <!-- Control Panel -->
+    <div class="control-panel-backdrop" id="controlPanelBackdrop" aria-hidden="true"></div>
+    
     <div class="control-panel-container">
-        <button class="control-panel-cta" id="controlPanelCta">
-            Control Panel
-        </button>
-        <div class="control-panel" id="controlPanel">
-            <div class="control-panel-header">
-                <h3 class="control-panel-title">Control Panel</h3>
-                <button class="close-button" id="closeControlPanel">×</button>
+        <button class="control-panel-cta" id="controlPanelCta">Controls</button>
+        <div class="control-panel-shell" id="controlPanelShell" aria-hidden="true" inert>
+            <div class="control-panel" id="controlPanel">
+                <div class="control-panel-header">
+                    <h3 class="control-panel-title">Controls</h3>
+                    <button class="close-button" id="closeControlPanel" type="button" aria-label="Close panel">×</button>
+                </div>
+                <div class="control-panel-inner">
+                    <div class="control-panel-content" id="controlPanelContent">
+            <!-- Effect Mode (tiles) -->
+            <div class="control-group">
+                <div class="control-group-title">Effect mode</div>
+                <div class="mode-tiles">
+                    <button type="button" class="mode-tile active" data-mode="default" id="modeTileDefault">Default</button>
+                    <button type="button" class="mode-tile" data-mode="breathingGalaxy" id="modeTileBreathing">Breathing Galaxy</button>
+                </div>
             </div>
             
-
+            <!-- Breathing Galaxy (visible when mode is breathingGalaxy) -->
+            <div class="control-group mode-options" data-mode="breathingGalaxy" id="breathingGalaxyGroup">
+                <div class="control-group-title">Breathing Galaxy</div>
+                <div class="control-item">
+                    <label class="control-label"><input type="checkbox" class="control-checkbox" id="breathEnabledCheck" checked> Breathing</label>
+                </div>
+                <div class="control-item">
+                    <label class="control-label">Breath amp</label>
+                    <div class="slider-container">
+                        <input type="range" class="slider" id="breathAmpSlider" min="0" max="0.5" step="0.01" value="0.15">
+                    </div>
+                    <div class="control-value" id="breathAmpValue">0.15</div>
+                </div>
+                <div class="control-item">
+                    <label class="control-label">Breath speed</label>
+                    <div class="slider-container">
+                        <input type="range" class="slider" id="breathSpeedSlider" min="0" max="3" step="0.1" value="1.2">
+                    </div>
+                    <div class="control-value" id="breathSpeedValue">1.20</div>
+                </div>
+                <div class="control-item">
+                    <label class="control-label"><input type="checkbox" class="control-checkbox" id="orbitEnabledCheck" checked> Orbit</label>
+                </div>
+                <div class="control-item">
+                    <label class="control-label">Orbit speed</label>
+                    <div class="slider-container">
+                        <input type="range" class="slider" id="orbitSpeedSlider" min="-2" max="2" step="0.1" value="0.4">
+                    </div>
+                    <div class="control-value" id="orbitSpeedValue">0.40</div>
+                </div>
+                <div class="control-item">
+                    <label class="control-label"><input type="checkbox" class="control-checkbox" id="noiseEnabledCheck" checked> Noise ripples</label>
+                </div>
+                <div class="control-item">
+                    <label class="control-label">Noise amp</label>
+                    <div class="slider-container">
+                        <input type="range" class="slider" id="noiseAmpSlider" min="0" max="1" step="0.05" value="0.2">
+                    </div>
+                    <div class="control-value" id="noiseAmpValue">0.20</div>
+                </div>
+                <div class="control-item">
+                    <label class="control-label">Noise scale</label>
+                    <div class="slider-container">
+                        <input type="range" class="slider" id="noiseScaleSlider" min="0.1" max="4" step="0.1" value="1.5">
+                    </div>
+                    <div class="control-value" id="noiseScaleValue">1.50</div>
+                </div>
+                <div class="control-item">
+                    <label class="control-label">Noise speed</label>
+                    <div class="slider-container">
+                        <input type="range" class="slider" id="noiseSpeedSlider" min="0" max="3" step="0.1" value="1">
+                    </div>
+                    <div class="control-value" id="noiseSpeedValue">1.00</div>
+                </div>
+                <div class="control-item">
+                    <label class="control-label">Energy</label>
+                    <div class="slider-container">
+                        <input type="range" class="slider" id="energySlider" min="0" max="1" step="0.05" value="0.7">
+                    </div>
+                    <div class="control-value" id="energyValue">0.70</div>
+                </div>
+                <div class="control-item">
+                    <label class="control-label">Cursor halo radius</label>
+                    <div class="slider-container">
+                        <input type="range" class="slider" id="mouseHaloRadiusSlider" min="0.05" max="0.3" step="0.01" value="0.15">
+                    </div>
+                    <div class="control-value" id="mouseHaloRadiusValue">0.15</div>
+                </div>
+                <div class="control-item">
+                    <label class="control-label">Cursor halo strength</label>
+                    <div class="slider-container">
+                        <input type="range" class="slider" id="mouseHaloStrengthSlider" min="0" max="2" step="0.1" value="1">
+                    </div>
+                    <div class="control-value" id="mouseHaloStrengthValue">1.00</div>
+                </div>
+            </div>
             
-            <!-- Particle System Controls -->
+            <!-- Particle System -->
             <div class="control-group">
                 <div class="control-group-title">Particle System</div>
                 <div class="control-item">
@@ -308,7 +546,7 @@
                 </div>
             </div>
             
-            <!-- Morphing Controls -->
+            <!-- Morphing -->
             <div class="control-group">
                 <div class="control-group-title">Morphing</div>
                 <div class="control-item">
@@ -326,11 +564,9 @@
                     <div class="control-value" id="clusterValue">1.00</div>
                 </div>
             </div>
-            
-
-            
-
-            
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
     

@@ -52,38 +52,147 @@ function init() {
 }
 
 /**
- * Setup the modern control panel with collapsible functionality
+ * Shared-element transition: panel grows from CTA and collapses back.
  */
+const PANEL_SHELL_DURATION_MS = 320;
+const PANEL_CONTENT_FADEOUT_MS = 140;
+const PANEL_WIDTH = 340;
+const PANEL_HEIGHT_FOR_SCALE = 400;
+
+let lastButtonRect = null;
+
 function setupControlPanel() {
-    // Get control panel elements
+    const controlPanelContainer = document.querySelector('.control-panel-container');
     const controlPanelCta = document.getElementById('controlPanelCta');
+    const controlPanelShell = document.getElementById('controlPanelShell');
     const controlPanel = document.getElementById('controlPanel');
     const closeButton = document.getElementById('closeControlPanel');
+    const backdrop = document.getElementById('controlPanelBackdrop');
+    let ctaRevealTimer = null;
     
-    // Control panel toggle functionality
-    controlPanelCta.addEventListener('click', () => {
-        controlPanel.classList.add('open');
-        controlPanelCta.style.display = 'none';
-    });
+    function openPanel() {
+        if (ctaRevealTimer) {
+            clearTimeout(ctaRevealTimer);
+            ctaRevealTimer = null;
+        }
+        const rect = controlPanelCta.getBoundingClientRect();
+        lastButtonRect = { width: rect.width, height: rect.height };
+        const scaleX = rect.width / PANEL_WIDTH;
+        const scaleY = rect.height / PANEL_HEIGHT_FOR_SCALE;
+        
+        // CTA fades out and scales down so it "hands off" to the panel
+        controlPanelCta.classList.add('panel-opening');
+        controlPanelCta.style.pointerEvents = 'none';
+        
+        // Expand container and show backdrop so layout is ready
+        if (controlPanelContainer) controlPanelContainer.classList.add('panel-expanded');
+        document.body.classList.add('panel-open');
+        backdrop.classList.add('visible');
+        
+        // Shell starts visible at CTA size (same spot, top-right), then will grow
+        controlPanelShell.setAttribute('aria-hidden', 'false');
+        controlPanelShell.removeAttribute('inert');
+        controlPanelShell.classList.add('panel-revealing');
+        controlPanelShell.style.transform = `scale(${scaleX}, ${scaleY})`;
+        controlPanelShell.style.opacity = '1';
+        controlPanelShell.style.pointerEvents = 'none';
+        
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                // Animate shell from CTA size to full size (opacity stays 1)
+                controlPanelShell.classList.remove('panel-revealing');
+                controlPanelShell.classList.add('open');
+                controlPanelShell.style.transform = '';
+                controlPanelShell.style.opacity = '';
+                controlPanelShell.style.pointerEvents = '';
+                requestAnimationFrame(() => {
+                    document.body.classList.add('panel-focused');
+                });
+                setTimeout(() => {
+                    controlPanelCta.style.visibility = 'hidden';
+                }, 180);
+            });
+        });
+    }
     
-    closeButton.addEventListener('click', () => {
-        controlPanel.classList.remove('open');
-        controlPanelCta.style.display = 'block';
-    });
+    function closePanel() {
+        if (!controlPanelShell.classList.contains('open')) return;
+        
+        controlPanelShell.classList.add('closing', 'panel-collapsing');
+        
+        setTimeout(() => {
+            const scaleX = lastButtonRect ? lastButtonRect.width / PANEL_WIDTH : 0.2;
+            const scaleY = lastButtonRect ? lastButtonRect.height / PANEL_HEIGHT_FOR_SCALE : 0.1;
+            
+            // Shrink panel into CTA size (opacity stays 1 so it feels like it becomes the button)
+            controlPanelShell.style.transform = `scale(${scaleX}, ${scaleY})`;
+            controlPanelShell.classList.remove('open');
+            controlPanelShell.setAttribute('inert', '');
+            document.body.classList.remove('panel-focused');
+            
+            const onTransitionEnd = (e) => {
+                if (e.propertyName !== 'transform') return;
+                controlPanelShell.removeEventListener('transitionend', onTransitionEnd);
+                controlPanelShell.classList.remove('closing', 'panel-collapsing');
+                controlPanelShell.style.transform = '';
+                controlPanelShell.style.opacity = '';
+                controlPanelShell.setAttribute('aria-hidden', 'true');
+                if (controlPanelContainer) controlPanelContainer.classList.remove('panel-expanded');
+                document.body.classList.remove('panel-open');
+                backdrop.classList.remove('visible');
+                
+                // Reveal CTA where the panel just shrank to
+                controlPanelCta.style.visibility = '';
+                controlPanelCta.style.pointerEvents = '';
+                controlPanelCta.classList.remove('panel-opening');
+                controlPanelCta.classList.add('animating-in');
+                requestAnimationFrame(() => {
+                    controlPanelCta.classList.add('visible');
+                });
+                setTimeout(() => {
+                    controlPanelCta.classList.remove('animating-in', 'visible');
+                }, PANEL_SHELL_DURATION_MS);
+            };
+            
+            controlPanelShell.addEventListener('transitionend', onTransitionEnd);
+        }, PANEL_CONTENT_FADEOUT_MS);
+    }
     
-    // Close panel when clicking outside
+    if (controlPanelCta) {
+        controlPanelCta.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            try {
+                openPanel();
+            } catch (err) {
+                console.error('Control panel open failed:', err);
+                controlPanelShell.classList.add('open');
+                if (controlPanelContainer) controlPanelContainer.classList.add('panel-expanded');
+                backdrop.classList.add('visible');
+            }
+        });
+    }
+    
+    if (closeButton) {
+        closeButton.addEventListener('click', (event) => {
+            event.stopPropagation();
+            closePanel();
+        });
+    }
+    
+    if (backdrop) backdrop.addEventListener('click', () => closePanel());
+    
     document.addEventListener('click', (event) => {
-        if (!controlPanel.contains(event.target) && 
-            !controlPanelCta.contains(event.target) && 
-            controlPanel.classList.contains('open')) {
-            controlPanel.classList.remove('open');
-            controlPanelCta.style.display = 'block';
+        if (controlPanelShell.classList.contains('open') &&
+            !controlPanelShell.contains(event.target) &&
+            !controlPanelCta.contains(event.target)) {
+            closePanel();
         }
     });
     
-    // Setup all slider controls
     setupParticleControls();
     setupMorphingControls();
+    setupBreathingGalaxyControls();
 }
 
 
@@ -120,6 +229,75 @@ function setupParticleControls() {
 
 
 /**
+ * Setup Effect mode (tiles) and Breathing Galaxy controls
+ */
+function setupBreathingGalaxyControls() {
+    const modeTiles = document.querySelectorAll('.mode-tile');
+    const breathingGalaxyGroup = document.getElementById('breathingGalaxyGroup');
+    
+    function setModeVisibility(mode) {
+        if (breathingGalaxyGroup) {
+            breathingGalaxyGroup.classList.toggle('visible', mode === 'breathingGalaxy');
+        }
+    }
+    
+    function setActiveTile(mode) {
+        modeTiles.forEach((tile) => {
+            tile.classList.toggle('active', tile.dataset.mode === mode);
+        });
+    }
+    
+    modeTiles.forEach((tile) => {
+        tile.addEventListener('click', () => {
+            const mode = tile.dataset.mode;
+            setActiveTile(mode);
+            setModeVisibility(mode);
+            if (particleSphere && particleSphere.setMode) particleSphere.setMode(mode);
+        });
+    });
+    
+    setActiveTile('default');
+    setModeVisibility('default');
+    
+    // Breathing Galaxy sliders and toggles
+    const bindSlider = (sliderId, valueId, decimals, paramKey) => {
+        const slider = document.getElementById(sliderId);
+        const valueEl = document.getElementById(valueId);
+        if (!slider || !valueEl) return;
+        slider.addEventListener('input', () => {
+            const v = parseFloat(slider.value);
+            valueEl.textContent = v.toFixed(decimals);
+            if (particleSphere && particleSphere.setBreathingGalaxyParam) {
+                particleSphere.setBreathingGalaxyParam(paramKey, v);
+            }
+        });
+    };
+    
+    bindSlider('breathAmpSlider', 'breathAmpValue', 2, 'breathAmp');
+    bindSlider('breathSpeedSlider', 'breathSpeedValue', 2, 'breathSpeed');
+    bindSlider('orbitSpeedSlider', 'orbitSpeedValue', 2, 'orbitSpeed');
+    bindSlider('noiseAmpSlider', 'noiseAmpValue', 2, 'noiseAmp');
+    bindSlider('noiseScaleSlider', 'noiseScaleValue', 2, 'noiseScale');
+    bindSlider('noiseSpeedSlider', 'noiseSpeedValue', 2, 'noiseSpeed');
+    bindSlider('energySlider', 'energyValue', 2, 'energy');
+    bindSlider('mouseHaloRadiusSlider', 'mouseHaloRadiusValue', 2, 'mouseHaloRadius');
+    bindSlider('mouseHaloStrengthSlider', 'mouseHaloStrengthValue', 2, 'mouseHaloStrength');
+    
+    const breathCheck = document.getElementById('breathEnabledCheck');
+    const orbitCheck = document.getElementById('orbitEnabledCheck');
+    const noiseCheck = document.getElementById('noiseEnabledCheck');
+    if (breathCheck) breathCheck.addEventListener('change', () => {
+        if (particleSphere && particleSphere.setBreathingGalaxyParam) particleSphere.setBreathingGalaxyParam('breathEnabled', breathCheck.checked);
+    });
+    if (orbitCheck) orbitCheck.addEventListener('change', () => {
+        if (particleSphere && particleSphere.setBreathingGalaxyParam) particleSphere.setBreathingGalaxyParam('orbitEnabled', orbitCheck.checked);
+    });
+    if (noiseCheck) noiseCheck.addEventListener('change', () => {
+        if (particleSphere && particleSphere.setBreathingGalaxyParam) particleSphere.setBreathingGalaxyParam('noiseEnabled', noiseCheck.checked);
+    });
+}
+
+/**
  * Setup morphing controls
  */
 function setupMorphingControls() {
@@ -148,6 +326,17 @@ function setupMorphingControls() {
     });
 }
 
+
+function bindSlider(sliderId, valueId, decimals, setter) {
+    const slider = document.getElementById(sliderId);
+    const valueEl = document.getElementById(valueId);
+    if (!slider || !valueEl) return;
+    slider.addEventListener('input', (e) => {
+        const v = parseFloat(e.target.value);
+        valueEl.textContent = v.toFixed(decimals);
+        setter(v);
+    });
+}
 
 
 /**

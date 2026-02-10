@@ -52,6 +52,9 @@ class AdvancedParticleSphere {
         
         // Mouse interaction
         this.mousePosition = new THREE.Vector3();
+        this.cursorWorld = new THREE.Vector3(); // 3D cursor for Breeze/Gust/Ripple
+        this.cursorWorldPrev = new THREE.Vector3();
+        this.cursorVelocity = new THREE.Vector3();
         this.interactionRadius = 2;
         this.interactionStrength = 0.5;
         this.isMouseNear = false;
@@ -60,6 +63,32 @@ class AdvancedParticleSphere {
         this.lastCameraDistance = 10;
         this.cameraMovementSpeed = 0;
         this.isCameraMoving = false;
+        
+        // Effect mode: 'default' | 'breathingGalaxy'
+        this.mode = 'default';
+        
+        // Breathing Galaxy params (synced to shader uniforms)
+        this.breathingGalaxyParams = {
+            breathEnabled: true,
+            breathAmp: 0.15,
+            breathSpeed: 1.2,
+            orbitEnabled: true,
+            orbitSpeed: 0.4,
+            noiseEnabled: true,
+            noiseAmp: 0.2,
+            noiseScale: 1.5,
+            noiseSpeed: 1.0,
+            energy: 0.7,
+            mouseHaloRadius: 0.15,
+            mouseHaloStrength: 1.0
+        };
+        
+        // Galaxy points mesh (ShaderMaterial); only visible when mode === 'breathingGalaxy'
+        this.pointsMesh = null;
+        this.galaxyGeometry = null;
+        this.pointsMaterial = null;
+        this.mouseNormalized = { x: 0.5, y: 0.5 };
+        this.mouseActive = 0;
         
         // Initialize the system
         this.init();
@@ -109,6 +138,12 @@ class AdvancedParticleSphere {
         this.controls.maxDistance = 25;
         this.controls.minDistance = 3;
         this.controls.autoRotate = false;
+        
+        // Use standard cursor over the scene (no grab/grabbing)
+        const canvas = this.renderer.domElement;
+        canvas.style.cursor = 'default';
+        canvas.addEventListener('pointerdown', () => { canvas.style.cursor = 'default'; }, true);
+        canvas.addEventListener('pointerup', () => { canvas.style.cursor = 'default'; }, true);
         
         // Create enhanced lighting
         this.setupLighting();
@@ -213,12 +248,14 @@ class AdvancedParticleSphere {
             particle.castShadow = true;
             particle.receiveShadow = true;
             
-            // Store original position and data for morphing
+            // Store original position and data for morphing; restPosition = ideal shape from cluster/scatter
+            const scattered = this.getScatteredPosition();
             particle.userData = {
                 originalPosition: new THREE.Vector3(x, y, z),
-                scatteredPosition: this.getScatteredPosition(),
+                scatteredPosition: scattered,
                 targetPosition: new THREE.Vector3(x, y, z),
                 shapePosition: new THREE.Vector3(x, y, z),
+                restPosition: new THREE.Vector3(x, y, z),
                 velocity: new THREE.Vector3(),
                 isInteracting: false,
                 interactionStartTime: 0,
@@ -230,6 +267,191 @@ class AdvancedParticleSphere {
             this.particles.push(particle);
             this.particleGroup.add(particle);
         }
+        this.updateRestPositions();
+        this.createGalaxyPoints();
+    }
+    
+    /**
+     * Create or recreate the Points mesh used for Breathing Galaxy mode (shader-driven).
+     * Uses same particle count and copies rest positions each frame when mode is active.
+     */
+    createGalaxyPoints() {
+        if (this.pointsMesh) {
+            this.scene.remove(this.pointsMesh);
+            this.galaxyGeometry.dispose();
+            this.pointsMaterial.dispose();
+        }
+        const positions = new Float32Array(this.particleCount * 3);
+        for (let i = 0; i < this.particleCount; i++) {
+            const p = this.particles[i].userData.restPosition;
+            positions[i * 3] = p.x;
+            positions[i * 3 + 1] = p.y;
+            positions[i * 3 + 2] = p.z;
+        }
+        this.galaxyGeometry = new THREE.BufferGeometry();
+        const posAttr = new THREE.BufferAttribute(positions, 3);
+        posAttr.setUsage(THREE.DynamicDrawUsage);
+        this.galaxyGeometry.setAttribute('position', posAttr);
+        
+        const uniforms = {
+            u_time: { value: 0 },
+            u_breathEnabled: { value: this.breathingGalaxyParams.breathEnabled ? 1 : 0 },
+            u_breathAmp: { value: this.breathingGalaxyParams.breathAmp },
+            u_breathSpeed: { value: this.breathingGalaxyParams.breathSpeed },
+            u_orbitEnabled: { value: this.breathingGalaxyParams.orbitEnabled ? 1 : 0 },
+            u_orbitSpeed: { value: this.breathingGalaxyParams.orbitSpeed },
+            u_noiseEnabled: { value: this.breathingGalaxyParams.noiseEnabled ? 1 : 0 },
+            u_noiseAmp: { value: this.breathingGalaxyParams.noiseAmp },
+            u_noiseScale: { value: this.breathingGalaxyParams.noiseScale },
+            u_noiseSpeed: { value: this.breathingGalaxyParams.noiseSpeed },
+            u_energy: { value: this.breathingGalaxyParams.energy },
+            u_mouse: { value: new THREE.Vector2(0.5, 0.5) },
+            u_mouseActive: { value: 0 },
+            u_mouseHaloRadius: { value: this.breathingGalaxyParams.mouseHaloRadius },
+            u_mouseHaloStrength: { value: this.breathingGalaxyParams.mouseHaloStrength },
+            u_basePointSize: { value: Math.max(24, this.particleSize * 400) }
+        };
+        
+        this.pointsMaterial = new THREE.ShaderMaterial({
+            uniforms,
+            vertexShader: this.getGalaxyVertexShader(),
+            fragmentShader: this.getGalaxyFragmentShader(),
+            transparent: true,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending
+        });
+        
+        this.pointsMesh = new THREE.Points(this.galaxyGeometry, this.pointsMaterial);
+        this.pointsMesh.frustumCulled = false;
+        this.pointsMesh.visible = false;
+        this.scene.add(this.pointsMesh);
+    }
+    
+    /**
+     * Vertex shader for Breathing Galaxy: breathing, noise ripples, orbit, pass NDC for halo.
+     */
+    getGalaxyVertexShader() {
+        return `
+            attribute vec3 position;
+            uniform float u_time;
+            uniform float u_breathEnabled;
+            uniform float u_breathAmp;
+            uniform float u_breathSpeed;
+            uniform float u_orbitEnabled;
+            uniform float u_orbitSpeed;
+            uniform float u_noiseEnabled;
+            uniform float u_noiseAmp;
+            uniform float u_noiseScale;
+            uniform float u_noiseSpeed;
+            uniform float u_energy;
+            uniform float u_basePointSize;
+            varying vec2 v_ndc;
+            varying vec3 v_worldPos;
+            varying float v_radiusNorm;
+            
+            // Simple 3D value noise (-1 to 1)
+            float hash(vec3 p) {
+                return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453);
+            }
+            float noise3D(vec3 p) {
+                vec3 i = floor(p);
+                vec3 f = fract(p);
+                f = f * f * (3.0 - 2.0 * f);
+                float n = mix(
+                    mix(mix(hash(i), hash(i + vec3(1,0,0)), f.x),
+                        mix(hash(i + vec3(0,1,0)), hash(i + vec3(1,1,0)), f.x), f.y),
+                    mix(mix(hash(i + vec3(0,0,1)), hash(i + vec3(1,0,1)), f.x),
+                        mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y), f.z
+                );
+                return n * 2.0 - 1.0;
+            }
+            
+            void main() {
+                vec3 p = position;
+                vec3 n = normalize(p);
+                float radius = length(p);
+                
+                // Breathing: pulse radius in and out
+                float breath = u_breathEnabled * sin(u_time * u_breathSpeed) * u_breathAmp;
+                radius = radius * (1.0 + breath);
+                p = n * radius;
+                
+                // Noise ripples along normal
+                vec3 noisePos = n * u_noiseScale + vec3(0.0, 0.0, u_time * u_noiseSpeed);
+                float noiseVal = noise3D(noisePos);
+                float ripple = u_noiseEnabled * noiseVal * u_noiseAmp;
+                p += n * ripple;
+                
+                // Orbit rotation around Y
+                float angle = u_orbitEnabled * u_time * u_orbitSpeed;
+                float c = cos(angle);
+                float s = sin(angle);
+                p.xz = mat2(c, -s, s, c) * p.xz;
+                
+                v_radiusNorm = length(p);
+                v_worldPos = (modelMatrix * vec4(p, 1.0)).xyz;
+                vec4 clipPos = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+                gl_Position = clipPos;
+                v_ndc = clipPos.xy / clipPos.w;
+                gl_PointSize = u_basePointSize * (1.0 + u_energy * 0.5);
+            }
+        `;
+    }
+    
+    /**
+     * Fragment shader: galaxy gradient + cursor halo.
+     */
+    getGalaxyFragmentShader() {
+        return `
+            uniform float u_energy;
+            uniform vec2 u_mouse;
+            uniform float u_mouseActive;
+            uniform float u_mouseHaloRadius;
+            uniform float u_mouseHaloStrength;
+            varying vec2 v_ndc;
+            varying vec3 v_worldPos;
+            varying float v_radiusNorm;
+            
+            void main() {
+                // Soft circular point
+                vec2 c = gl_PointCoord * 2.0 - 1.0;
+                float d = dot(c, c);
+                if (d > 1.0) discard;
+                float alpha = 1.0 - smoothstep(0.2, 1.0, d);
+                
+                // Galaxy-like gradient: inner cool blue to outer magenta
+                vec3 innerColor = vec3(0.2, 0.5, 1.0);
+                vec3 outerColor = vec3(0.9, 0.2, 1.0);
+                float t = clamp(v_radiusNorm / 10.0, 0.0, 1.0);
+                vec3 baseColor = mix(innerColor, outerColor, t);
+                baseColor *= (0.85 + u_energy * 0.35);
+                
+                // Cursor halo in 0-1 screen space (v_ndc is NDC so *0.5+0.5)
+                vec2 screenPos = v_ndc * 0.5 + 0.5;
+                float dist = distance(screenPos, u_mouse);
+                float halo = u_mouseActive * smoothstep(u_mouseHaloRadius, 0.0, dist) * u_mouseHaloStrength * u_energy;
+                vec3 color = baseColor + vec3(halo, halo * 0.9, halo);
+                
+                gl_FragColor = vec4(color, alpha * (0.9 + u_energy * 0.1));
+            }
+        `;
+    }
+    
+    /**
+     * Recompute and store restPosition for every particle from current cluster/scatter (and shape).
+     * Call when cluster or scatter sliders change so all modes distort from the same ideal shape.
+     */
+    updateRestPositions() {
+        this.particles.forEach((particle) => {
+            const ud = particle.userData;
+            if (this.currentShape !== 'sphere') {
+                ud.restPosition.copy(ud.shapePosition);
+            } else {
+                const scatterTarget = new THREE.Vector3().lerpVectors(ud.originalPosition, ud.scatteredPosition, this.scatterValue);
+                const clusterTarget = new THREE.Vector3().lerpVectors(ud.scatteredPosition, ud.originalPosition, this.clusterValue);
+                ud.restPosition.lerpVectors(scatterTarget, clusterTarget, 0.5);
+            }
+        });
     }
     
     /**
@@ -363,15 +585,35 @@ class AdvancedParticleSphere {
      * Setup event listeners for mouse interaction and window resizing
      */
     setupEventListeners() {
-        // Mouse move for interaction
-        this.renderer.domElement.addEventListener('mousemove', (event) => {
+        const canvas = this.renderer.domElement;
+        
+        canvas.addEventListener('mousemove', (event) => {
             this.onMouseMove(event);
+            this.mouseNormalized.x = event.clientX / window.innerWidth;
+            this.mouseNormalized.y = 1.0 - (event.clientY / window.innerHeight);
         });
         
-        // Window resize
+        canvas.addEventListener('pointerenter', () => { this.mouseActive = 1; });
+        canvas.addEventListener('pointerleave', () => { this.mouseActive = 0; });
+        
+        canvas.addEventListener('click', (event) => {
+            this.updateCursorFromEvent(event);
+        });
+        
         window.addEventListener('resize', () => {
             this.onWindowResize();
         });
+    }
+    
+    updateCursorFromEvent(event) {
+        this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        this.raycaster.setFromCamera(this.mouse, this.camera);
+        const r = this.sphereRadius + 1;
+        const sphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), r);
+        const hit = new THREE.Vector3();
+        if (this.raycaster.ray.intersectSphere(sphere, hit)) this.cursorWorld.copy(hit);
+        else this.raycaster.ray.at(10, this.cursorWorld);
     }
     
     /**
@@ -393,6 +635,20 @@ class AdvancedParticleSphere {
         // Transform intersection to world space
         this.mousePosition.copy(intersection);
         
+        // Cursor in world space: project onto sphere same size as particles so effects hit
+        const cursorSphereRadius = this.sphereRadius + 1;
+        const cursorSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), cursorSphereRadius);
+        const cursorHit = new THREE.Vector3();
+        if (this.raycaster.ray.intersectSphere(cursorSphere, cursorHit)) {
+            this.cursorWorld.copy(cursorHit);
+        } else {
+            this.raycaster.ray.at(10, this.cursorWorld);
+        }
+        if (this.cursorWorldPrev.lengthSq() < 1e-10) this.cursorWorldPrev.copy(this.cursorWorld);
+        this.cursorVelocity.subVectors(this.cursorWorld, this.cursorWorldPrev);
+        this.cursorVelocity.multiplyScalar(0.3);
+        this.cursorWorldPrev.copy(this.cursorWorld);
+        
         // Check distance to particle group center
         const distanceToCenter = this.mousePosition.distanceTo(this.particleGroup.position);
         this.isMouseNear = distanceToCenter < this.interactionRadius;
@@ -408,73 +664,73 @@ class AdvancedParticleSphere {
     }
     
     /**
-     * Update particle positions with lightspeed scatter effect
+     * Update particle positions with lightspeed scatter effect and interaction modes.
+     * When mode is breathingGalaxy, we only update the Points geometry from rest positions and skip mesh updates.
      */
     updateParticles() {
         const time = this.clock.getElapsedTime();
+        const dt = Math.min(0.016, this.clock.getDelta());
+        
+        // Breathing Galaxy mode: feed rest positions to Points mesh and hide mesh group
+        if (this.mode === 'breathingGalaxy' && this.pointsMesh && this.galaxyGeometry && this.particles.length === this.particleCount) {
+            this.particleGroup.visible = false;
+            this.pointsMesh.visible = true;
+            const posAttr = this.galaxyGeometry.getAttribute('position');
+            if (posAttr) {
+            for (let i = 0; i < this.particleCount; i++) {
+                const ud = this.particles[i].userData;
+                let displayRest = ud.restPosition.clone();
+                if (this.currentShape === 'ring') {
+                    const cos = Math.cos(this.shapeRotation);
+                    const sin = Math.sin(this.shapeRotation);
+                    const x = displayRest.x, y = displayRest.y;
+                    displayRest.x = x * cos - y * sin;
+                    displayRest.y = x * sin + y * cos;
+                }
+                posAttr.setXYZ(i, displayRest.x, displayRest.y, displayRest.z);
+            }
+            posAttr.needsUpdate = true;
+            }
+            if (this.currentShape === 'ring') this.shapeRotation += 0.02;
+            return;
+        }
+        
+        this.particleGroup.visible = true;
+        if (this.pointsMesh) this.pointsMesh.visible = false;
         
         // Track camera movement for lightspeed effect
         const currentCameraDistance = this.camera.position.length();
         const cameraDistanceChange = Math.abs(currentCameraDistance - this.lastCameraDistance);
-        this.cameraMovementSpeed = cameraDistanceChange * 20; // Amplify the effect more
-        this.isCameraMoving = cameraDistanceChange > 0.005; // More sensitive to zoom
+        this.cameraMovementSpeed = cameraDistanceChange * 20;
+        this.isCameraMoving = cameraDistanceChange > 0.005;
         this.lastCameraDistance = currentCameraDistance;
         
         this.particles.forEach((particle, index) => {
             const userData = particle.userData;
+            const restPosition = userData.restPosition;
             
-            // Calculate target position based on shape, scatter and cluster values
-            let targetPosition = new THREE.Vector3();
-            
-            if (this.currentShape !== 'sphere') {
-                // Use shape position
-                targetPosition.copy(userData.shapePosition);
-                
-                // Apply rotation for ring
-                if (this.currentShape === 'ring') {
-                    this.shapeRotation += 0.02;
-                    const cos = Math.cos(this.shapeRotation);
-                    const sin = Math.sin(this.shapeRotation);
-                    const x = targetPosition.x;
-                    const y = targetPosition.y;
-                    targetPosition.x = x * cos - y * sin;
-                    targetPosition.y = x * sin + y * cos;
-                }
-            } else {
-                // Use scatter and cluster values
-                const scatterTarget = new THREE.Vector3();
-                scatterTarget.lerpVectors(
-                    userData.originalPosition,
-                    userData.scatteredPosition,
-                    this.scatterValue
-                );
-                
-                const clusterTarget = new THREE.Vector3();
-                clusterTarget.lerpVectors(
-                    userData.scatteredPosition,
-                    userData.originalPosition,
-                    this.clusterValue
-                );
-                
-                // Combine scatter and cluster effects
-                targetPosition.lerpVectors(scatterTarget, clusterTarget, 0.5);
+            // Apply ring rotation to rest for display (restPosition stays in rest space for mode math)
+            let displayRest = restPosition.clone();
+            if (this.currentShape === 'ring') {
+                this.shapeRotation += 0.02;
+                const cos = Math.cos(this.shapeRotation);
+                const sin = Math.sin(this.shapeRotation);
+                const x = displayRest.x, y = displayRest.y;
+                displayRest.x = x * cos - y * sin;
+                displayRest.y = x * sin + y * cos;
             }
             
-            // Apply mouse interaction
+            let targetPosition = displayRest.clone();
+            
+            // Mouse repulsion
             if (this.isMouseNear) {
                 const distanceToMouse = particle.position.distanceTo(this.mousePosition);
                 if (distanceToMouse < this.interactionRadius) {
-                    // Calculate repulsion force
                     const repulsionDirection = new THREE.Vector3()
                         .subVectors(particle.position, this.mousePosition)
                         .normalize();
-                    
                     const repulsionStrength = (this.interactionRadius - distanceToMouse) / this.interactionRadius;
-                    const repulsionOffset = repulsionDirection.multiplyScalar(
-                        repulsionStrength * this.interactionStrength
-                    );
-                    
-                    targetPosition.add(repulsionOffset);
+                    targetPosition.add(repulsionDirection.multiplyScalar(repulsionStrength * this.interactionStrength));
                     userData.isInteracting = true;
                     userData.interactionStartTime = time;
                 }
@@ -482,11 +738,8 @@ class AdvancedParticleSphere {
                 userData.isInteracting = false;
             }
             
-            // Store previous position for streak calculation
             const previousPosition = particle.position.clone();
-            
-            // Smooth interpolation to target position with lightspeed effect
-            const lerpSpeed = this.scatterValue > 0.5 ? 0.15 : 0.08; // Faster when scattering
+            const lerpSpeed = this.scatterValue > 0.5 ? 0.15 : 0.08;
             particle.position.lerp(targetPosition, lerpSpeed);
             
             // Calculate velocity for lightspeed effect
@@ -588,6 +841,29 @@ class AdvancedParticleSphere {
     animate() {
         requestAnimationFrame(() => this.animate());
         
+        const time = this.clock.getElapsedTime();
+        const dt = this.clock.getDelta();
+        
+        // Sync Breathing Galaxy uniforms (so panel changes apply immediately)
+        if (this.pointsMaterial && this.pointsMaterial.uniforms) {
+            const u = this.pointsMaterial.uniforms;
+            u.u_time.value = time;
+            u.u_mouse.value.set(this.mouseNormalized.x, this.mouseNormalized.y);
+            u.u_mouseActive.value = this.mouseActive;
+            u.u_breathEnabled.value = this.breathingGalaxyParams.breathEnabled ? 1 : 0;
+            u.u_breathAmp.value = this.breathingGalaxyParams.breathAmp;
+            u.u_breathSpeed.value = this.breathingGalaxyParams.breathSpeed;
+            u.u_orbitEnabled.value = this.breathingGalaxyParams.orbitEnabled ? 1 : 0;
+            u.u_orbitSpeed.value = this.breathingGalaxyParams.orbitSpeed;
+            u.u_noiseEnabled.value = this.breathingGalaxyParams.noiseEnabled ? 1 : 0;
+            u.u_noiseAmp.value = this.breathingGalaxyParams.noiseAmp;
+            u.u_noiseScale.value = this.breathingGalaxyParams.noiseScale;
+            u.u_noiseSpeed.value = this.breathingGalaxyParams.noiseSpeed;
+            u.u_energy.value = this.breathingGalaxyParams.energy;
+            u.u_mouseHaloRadius.value = this.breathingGalaxyParams.mouseHaloRadius;
+            u.u_mouseHaloStrength.value = this.breathingGalaxyParams.mouseHaloStrength;
+        }
+        
         // Update controls
         this.controls.update();
         
@@ -636,6 +912,7 @@ class AdvancedParticleSphere {
      */
     setScatterValue(value) {
         this.scatterValue = Math.max(0, Math.min(1, value));
+        this.updateRestPositions();
     }
     
     /**
@@ -643,6 +920,7 @@ class AdvancedParticleSphere {
      */
     setClusterValue(value) {
         this.clusterValue = Math.max(0, Math.min(1, value));
+        this.updateRestPositions();
     }
     
     /**
@@ -690,9 +968,10 @@ class AdvancedParticleSphere {
         // Update particle shape positions
         this.particles.forEach((particle, index) => {
             if (index < shapePositions.length) {
-                particle.userData.shapePosition = shapePositions[index];
+                particle.userData.shapePosition.copy(shapePositions[index]);
             }
         });
+        this.updateRestPositions();
     }
     
     /**
@@ -704,6 +983,29 @@ class AdvancedParticleSphere {
         if (this.currentShape !== 'sphere') {
             this.morphToShape(this.currentShape);
         }
+    }
+    
+    /**
+     * Set effect mode: 'default' | 'breathingGalaxy'
+     */
+    setMode(mode) {
+        this.mode = (mode === 'breathingGalaxy') ? 'breathingGalaxy' : 'default';
+    }
+    
+    /**
+     * Set a single Breathing Galaxy param (from control panel).
+     */
+    setBreathingGalaxyParam(key, value) {
+        if (this.breathingGalaxyParams.hasOwnProperty(key)) {
+            this.breathingGalaxyParams[key] = value;
+        }
+    }
+    
+    /**
+     * Set multiple Breathing Galaxy params at once.
+     */
+    setBreathingGalaxyParams(params) {
+        Object.assign(this.breathingGalaxyParams, params);
     }
     
     /**
@@ -719,6 +1021,8 @@ class AdvancedParticleSphere {
     setInteractionStrength(strength) {
         this.interactionStrength = strength;
     }
+    
+    
     
     /**
      * Recreate particles with new parameters
