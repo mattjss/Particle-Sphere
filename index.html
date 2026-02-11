@@ -8,8 +8,26 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
     <style>
+        /* Base UI: design tokens */
         :root {
             --app-font: 'Space Mono', monospace;
+            --space-1: 4px;
+            --space-2: 8px;
+            --space-3: 12px;
+            --space-4: 16px;
+            --space-5: 20px;
+            --space-6: 24px;
+            --radius-sm: 6px;
+            --radius-md: 8px;
+            --radius-lg: 12px;
+            --surface: hsl(222 14% 8%);
+            --surface-elevated: hsl(222 12% 11%);
+            --border: hsl(222 10% 18%);
+            --text: hsl(0 0% 98%);
+            --text-muted: hsl(222 8% 58%);
+            --text-faint: hsl(222 8% 45%);
+            --accent: hsl(222 80% 55%);
+            --overlay: rgba(0, 0, 0, 0.45);
         }
         * {
             margin: 0;
@@ -18,9 +36,9 @@
         }
         html, body {
             font-family: var(--app-font);
-            background: #000000; /* Pure black space background */
+            background: #000;
             overflow: hidden;
-            color: white;
+            color: var(--text);
         }
         
         #container {
@@ -32,10 +50,11 @@
         }
         
         #container canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
             cursor: default;
         }
-        
-
         
         .loading {
             position: absolute;
@@ -43,243 +62,179 @@
             left: 50%;
             transform: translate(-50%, -50%);
             font-size: 18px;
-            color: #ffffff;
+            color: var(--text);
             font-weight: 500;
         }
         
-        /* Shared motion + font. To change font only: edit --app-font and the <link> in <head>. */
-        :root {
-            --panel-ease: cubic-bezier(0.33, 1, 0.68, 1);
-            --panel-ease-out: cubic-bezier(0.25, 0.46, 0.45, 0.94);
-            --panel-duration: 0.32s;
-            --panel-duration-fast: 0.22s;
-        }
-        
+        /* CTA + Panel container */
         .control-panel-container {
             position: fixed;
-            top: 20px;
-            right: 20px;
+            top: var(--space-4);
+            right: var(--space-4);
             z-index: 1000;
         }
         
-        /* When panel is open, expand container so it receives pointer events over full panel area */
-        .control-panel-container.panel-expanded,
-        .control-panel-container:has(.control-panel-shell.open) {
-            width: 340px;
-            height: 65vh;
-            max-height: 520px;
-            min-height: 280px;
-        }
-        
         .control-panel-cta {
-            position: relative;
-            z-index: 2;
-            background: hsl(240 6% 10%);
-            color: hsl(0 0% 98%);
-            border: 1px solid hsl(240 4% 16%);
-            padding: 12px 16px;
-            border-radius: 10px;
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-2);
+            padding: var(--space-2) var(--space-4);
+            background: var(--surface-elevated);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
             font-size: 13px;
             font-weight: 600;
-            cursor: pointer;
-            transition: transform var(--panel-duration) var(--panel-ease),
-                        background var(--panel-duration-fast) var(--panel-ease),
-                        border-color var(--panel-duration-fast) var(--panel-ease),
-                        box-shadow var(--panel-duration-fast) var(--panel-ease),
-                        opacity var(--panel-duration-fast) var(--panel-ease);
-            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.04);
             font-family: var(--app-font);
-            letter-spacing: -0.01em;
-            backdrop-filter: blur(16px);
+            cursor: pointer;
+            transition: background 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
         }
         
         .control-panel-cta:hover {
-            background: hsl(240 4% 14%);
-            border-color: hsl(240 4% 20%);
-            transform: translateY(-2px);
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.06);
+            background: hsl(222 12% 14%);
+            border-color: hsl(222 10% 25%);
         }
         
-        .control-panel-cta:active {
-            transform: translateY(-1px) scale(0.98);
-        }
-        
-        /* CTA fades out and scales down as panel grows from same spot */
-        .control-panel-cta.panel-opening {
+        .control-panel-container.is-open .control-panel-cta {
             opacity: 0;
             pointer-events: none;
-            transform: scale(0.96);
-            transition: opacity 0.12s var(--panel-ease),
-                        transform 0.2s var(--panel-ease);
         }
         
-        /* CTA reappears as panel shrinks into it */
-        .control-panel-cta.animating-in {
-            opacity: 0;
-            transform: scale(0.96);
-            pointer-events: none;
-            transition: opacity var(--panel-duration-fast) var(--panel-ease),
-                        transform var(--panel-duration) var(--panel-ease);
-        }
-        
-        .control-panel-cta.animating-in.visible {
-            opacity: 1;
-            transform: scale(1);
-            pointer-events: auto;
-        }
-        
-        .control-panel-shell {
+        /* Panel */
+        .control-panel-menu {
             position: absolute;
             top: 0;
             right: 0;
-            z-index: 1;
-            width: 340px;
-            height: 65vh;
-            max-height: 520px;
-            min-height: 280px;
-            transform-origin: 100% 0;
-            pointer-events: none;
-            visibility: hidden;
-            transition: transform var(--panel-duration) var(--panel-ease),
-                        opacity var(--panel-duration) var(--panel-ease);
-            opacity: 0;
-        }
-        
-        /* Visible at CTA size before expanding (JS sets inline transform/opacity) */
-        .control-panel-shell.panel-revealing {
-            visibility: visible;
-        }
-        
-        .control-panel-shell.open {
-            transform: scale(1, 1);
-            opacity: 1;
-            pointer-events: all;
-            visibility: visible;
-        }
-        
-        /* Closing: scale down into CTA size (opacity stays 1 until swap) */
-        .control-panel-shell.panel-collapsing {
-            opacity: 1;
-        }
-        
-        .control-panel {
-            position: absolute;
-            inset: 0;
+            width: 320px;
+            max-height: calc(100vh - var(--space-6));
             display: flex;
             flex-direction: column;
-            background: hsl(240 6% 10%);
-            backdrop-filter: blur(16px);
-            border: 1px solid hsl(240 4% 16%);
-            border-radius: 10px;
-            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.04);
+            min-height: 0;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
             font-family: var(--app-font);
             overflow: hidden;
+            transform-origin: top right;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease, transform 0.2s ease;
+        }
+        
+        .control-panel-container.is-open .control-panel-menu {
+            opacity: 1;
             pointer-events: auto;
         }
         
         .control-panel-inner {
-            flex: 1 1 0;
+            flex: 1 1 auto;
             min-height: 0;
+            padding: var(--space-4);
             overflow-y: auto;
             overflow-x: hidden;
-            padding: 12px 16px 20px;
             -webkit-overflow-scrolling: touch;
-            pointer-events: auto;
         }
         
         .control-panel-content {
             opacity: 0;
-            transform: translateY(8px);
-            transition: opacity var(--panel-duration-fast) var(--panel-ease) 0.08s,
-                        transform var(--panel-duration) var(--panel-ease) 0.08s;
+            transform: translateY(4px);
+            transition: opacity 0.2s ease 0.05s, transform 0.2s ease 0.05s;
         }
         
-        .control-panel-shell.open .control-panel-content {
+        .control-panel-container.is-open .control-panel-content {
             opacity: 1;
             transform: translateY(0);
-        }
-        
-        .control-panel-shell.closing .control-panel-content {
-            opacity: 0;
-            transform: translateY(6px);
-            transition: opacity 0.14s var(--panel-ease-out),
-                        transform 0.14s var(--panel-ease-out);
-            transition-delay: 0s;
         }
         
         .control-panel-backdrop {
             position: fixed;
             inset: 0;
-            background: rgba(0, 0, 0, 0.45);
+            background: var(--overlay);
             opacity: 0;
             pointer-events: none;
             z-index: 999;
-            transition: opacity var(--panel-duration) var(--panel-ease);
+            transition: opacity 0.2s ease;
         }
         
         .control-panel-backdrop.visible {
             opacity: 1;
-            pointer-events: all;
-        }
-        
-        body.panel-open #container {
-            transition: transform var(--panel-duration) var(--panel-ease);
-        }
-        
-        body.panel-open.panel-focused #container {
-            transform: scale(0.985);
+            pointer-events: auto;
         }
         
         .control-panel-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 12px 16px;
-            border-bottom: 1px solid hsl(240 4% 16%);
+            padding: var(--space-3) var(--space-4);
+            background: var(--surface-elevated);
+            border-bottom: 1px solid var(--border);
             flex-shrink: 0;
         }
         
         .control-panel-title {
-            font-size: 13px;
+            font-size: 14px;
             font-weight: 600;
-            color: hsl(0 0% 98%);
-            letter-spacing: 0.02em;
+            color: var(--text);
+            letter-spacing: 0.01em;
         }
         
         .close-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
             background: transparent;
             border: none;
-            color: hsl(240 5% 60%);
-            font-size: 20px;
+            border-radius: var(--radius-sm);
+            color: var(--text-muted);
+            font-size: 18px;
             line-height: 1;
             cursor: pointer;
-            padding: 2px 6px;
-            border-radius: 6px;
-            transition: color 0.15s, background 0.15s;
+            transition: color 0.15s ease, background 0.15s ease;
         }
         
         .close-button:hover {
-            color: hsl(0 0% 98%);
-            background: hsl(240 4% 18%);
+            color: var(--text);
+            background: hsl(222 10% 18%);
         }
         
         .control-group {
-            margin-bottom: 16px;
+            margin-bottom: var(--space-5);
         }
         
         .control-group:last-child { margin-bottom: 0; }
         
         .control-group-title {
-            font-size: 10px;
+            font-size: 11px;
             font-weight: 600;
-            color: hsl(240 5% 55%);
-            margin-bottom: 8px;
-            letter-spacing: 0.06em;
+            color: var(--text-muted);
+            margin-bottom: var(--space-2);
+            letter-spacing: 0.04em;
             text-transform: uppercase;
         }
         
+        .control-description {
+            font-size: 12px;
+            color: var(--text-muted);
+            line-height: 1.45;
+            margin-bottom: var(--space-3);
+        }
+        
+        .control-hint {
+            font-size: 11px;
+            color: var(--text-faint);
+            margin-top: var(--space-2);
+            margin-bottom: 0;
+            line-height: 1.4;
+        }
+        
+        .mode-tiles--display {
+            grid-template-columns: 1fr 1fr;
+        }
+        
         .control-item {
-            margin-bottom: 14px;
+            margin-bottom: var(--space-3);
         }
         
         .control-item:last-child { margin-bottom: 0; }
@@ -288,35 +243,41 @@
             display: block;
             font-size: 12px;
             font-weight: 500;
-            color: hsl(0 0% 92%);
-            margin-bottom: 6px;
-            letter-spacing: 0.02em;
+            color: var(--text);
+            margin-bottom: var(--space-1);
+            letter-spacing: 0.01em;
+        }
+        
+        .control-label:has(input[type="checkbox"]) {
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
         }
         
         .control-value {
             font-size: 11px;
             font-weight: 600;
-            color: hsl(240 5% 70%);
-            background: hsl(240 4% 14%);
-            border: 1px solid hsl(240 4% 20%);
-            padding: 4px 8px;
-            border-radius: 4px;
+            color: var(--text-muted);
+            background: var(--surface-elevated);
+            border: 1px solid var(--border);
+            padding: var(--space-1) var(--space-2);
+            border-radius: var(--radius-sm);
             min-width: 48px;
             text-align: right;
             font-variant-numeric: tabular-nums;
             display: inline-block;
-            margin-top: 6px;
+            margin-top: var(--space-1);
         }
         
         .slider-container {
-            margin-top: 4px;
+            margin-top: var(--space-1);
         }
         
         .slider {
             width: 100%;
-            height: 8px;
-            background: hsl(240 4% 18%);
-            border-radius: 4px;
+            height: 6px;
+            background: var(--border);
+            border-radius: var(--radius-sm);
             outline: none;
             -webkit-appearance: none;
             appearance: none;
@@ -325,103 +286,108 @@
         .slider::-webkit-slider-thumb {
             -webkit-appearance: none;
             appearance: none;
-            width: 18px;
-            height: 18px;
-            background: hsl(0 0% 98%);
+            width: 14px;
+            height: 14px;
+            background: var(--text);
             border-radius: 50%;
             cursor: pointer;
-            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
-            transition: transform 0.12s ease, box-shadow 0.12s ease;
+            transition: transform 0.12s ease;
         }
         
         .slider::-webkit-slider-thumb:hover {
             transform: scale(1.1);
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
         }
         
         .slider::-moz-range-thumb {
-            width: 18px;
-            height: 18px;
-            background: hsl(0 0% 98%);
+            width: 14px;
+            height: 14px;
+            background: var(--text);
             border-radius: 50%;
             cursor: pointer;
             border: none;
-            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
         }
         
         .control-select {
             width: 100%;
-            padding: 8px 12px;
+            padding: var(--space-2) var(--space-3);
             font-size: 12px;
             font-family: var(--app-font);
             font-weight: 500;
-            color: hsl(0 0% 98%);
-            background: hsl(240 4% 14%);
-            border: 1px solid hsl(240 4% 20%);
-            border-radius: 6px;
+            color: var(--text);
+            background: var(--surface-elevated);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
             cursor: pointer;
-            margin-top: 4px;
+            margin-top: var(--space-1);
         }
         
         .control-checkbox {
             width: 16px;
             height: 16px;
-            accent-color: hsl(240 5% 60%);
+            accent-color: var(--accent);
             cursor: pointer;
         }
         
         .mode-tiles {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 8px;
-            margin-top: 6px;
+            grid-auto-rows: minmax(40px, auto);
+            gap: var(--space-2);
+            margin-top: var(--space-2);
         }
+        
         .mode-tile {
-            padding: 12px 10px;
+            padding: var(--space-2) var(--space-3);
+            min-height: 40px;
             font-size: 11px;
             font-family: var(--app-font);
             font-weight: 600;
             letter-spacing: 0.02em;
-            color: hsl(240 5% 65%);
-            background: hsl(240 4% 14%);
-            border: 1px solid hsl(240 4% 20%);
-            border-radius: 8px;
+            color: var(--text-muted);
+            background: var(--surface-elevated);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
             cursor: pointer;
-            transition: color 0.15s, background 0.15s, border-color 0.15s;
+            transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            text-align: center;
+            line-height: 1.2;
         }
+        
         .mode-tile:hover {
-            color: hsl(0 0% 92%);
-            background: hsl(240 4% 18%);
-            border-color: hsl(240 4% 25%);
+            color: var(--text);
+            background: hsl(222 10% 16%);
+            border-color: hsl(222 10% 22%);
         }
+        
         .mode-tile.active {
-            color: hsl(0 0% 98%);
-            background: hsl(240 4% 22%);
-            border-color: hsl(240 5% 45%);
+            color: var(--text);
+            background: hsl(222 15% 18%);
+            border-color: var(--accent);
         }
+        
         .mode-options { display: none; }
         .mode-options.visible { display: block; }
         
         .fps-display {
-            background: hsl(240 4% 14%);
-            border: 1px solid hsl(240 4% 18%);
-            border-radius: 6px;
-            padding: 10px 12px;
+            background: var(--surface-elevated);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            padding: var(--space-3);
             text-align: center;
             font-size: 11px;
             font-weight: 600;
-            color: hsl(0 0% 98%);
+            color: var(--text-muted);
         }
         
-        .fps-value { font-size: 16px; font-weight: 700; color: hsl(0 0% 98%); }
-        
-        .control-panel-inner::-webkit-scrollbar { width: 6px; }
-        .control-panel-inner::-webkit-scrollbar-track { background: hsl(240 4% 12%); border-radius: 3px; }
-        .control-panel-inner::-webkit-scrollbar-thumb {
-            background: hsl(240 4% 28%);
-            border-radius: 3px;
+        .fps-value {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--text);
         }
-        .control-panel-inner::-webkit-scrollbar-thumb:hover { background: hsl(240 4% 38%); }
+        
     </style>
 </head>
 <body>
@@ -431,118 +397,31 @@
     
     <div class="control-panel-backdrop" id="controlPanelBackdrop" aria-hidden="true"></div>
     
-    <div class="control-panel-container">
-        <button class="control-panel-cta" id="controlPanelCta">Controls</button>
-        <div class="control-panel-shell" id="controlPanelShell" aria-hidden="true" inert>
-            <div class="control-panel" id="controlPanel">
-                <div class="control-panel-header">
-                    <h3 class="control-panel-title">Controls</h3>
-                    <button class="close-button" id="closeControlPanel" type="button" aria-label="Close panel">×</button>
-                </div>
-                <div class="control-panel-inner">
-                    <div class="control-panel-content" id="controlPanelContent">
-            <!-- Effect Mode (tiles) -->
-            <div class="control-group">
-                <div class="control-group-title">Effect mode</div>
-                <div class="mode-tiles">
-                    <button type="button" class="mode-tile active" data-mode="default" id="modeTileDefault">Default</button>
-                    <button type="button" class="mode-tile" data-mode="breathingGalaxy" id="modeTileBreathing">Breathing Galaxy</button>
-                </div>
+    <div class="control-panel-container" id="controlPanelContainer">
+        <button type="button" class="control-panel-cta" id="controlPanelCta" aria-expanded="false" aria-haspopup="true">Controls</button>
+        <div class="control-panel-menu" id="controlPanelMenu" role="dialog" aria-label="Controls" aria-hidden="true">
+            <div class="control-panel-header">
+                <h3 class="control-panel-title">Controls</h3>
+                <button class="close-button" id="closeControlPanel" type="button" aria-label="Close">×</button>
             </div>
-            
-            <!-- Breathing Galaxy (visible when mode is breathingGalaxy) -->
-            <div class="control-group mode-options" data-mode="breathingGalaxy" id="breathingGalaxyGroup">
-                <div class="control-group-title">Breathing Galaxy</div>
-                <div class="control-item">
-                    <label class="control-label"><input type="checkbox" class="control-checkbox" id="breathEnabledCheck" checked> Breathing</label>
-                </div>
-                <div class="control-item">
-                    <label class="control-label">Breath amp</label>
-                    <div class="slider-container">
-                        <input type="range" class="slider" id="breathAmpSlider" min="0" max="0.5" step="0.01" value="0.15">
-                    </div>
-                    <div class="control-value" id="breathAmpValue">0.15</div>
-                </div>
-                <div class="control-item">
-                    <label class="control-label">Breath speed</label>
-                    <div class="slider-container">
-                        <input type="range" class="slider" id="breathSpeedSlider" min="0" max="3" step="0.1" value="1.2">
-                    </div>
-                    <div class="control-value" id="breathSpeedValue">1.20</div>
-                </div>
-                <div class="control-item">
-                    <label class="control-label"><input type="checkbox" class="control-checkbox" id="orbitEnabledCheck" checked> Orbit</label>
-                </div>
-                <div class="control-item">
-                    <label class="control-label">Orbit speed</label>
-                    <div class="slider-container">
-                        <input type="range" class="slider" id="orbitSpeedSlider" min="-2" max="2" step="0.1" value="0.4">
-                    </div>
-                    <div class="control-value" id="orbitSpeedValue">0.40</div>
-                </div>
-                <div class="control-item">
-                    <label class="control-label"><input type="checkbox" class="control-checkbox" id="noiseEnabledCheck" checked> Noise ripples</label>
-                </div>
-                <div class="control-item">
-                    <label class="control-label">Noise amp</label>
-                    <div class="slider-container">
-                        <input type="range" class="slider" id="noiseAmpSlider" min="0" max="1" step="0.05" value="0.2">
-                    </div>
-                    <div class="control-value" id="noiseAmpValue">0.20</div>
-                </div>
-                <div class="control-item">
-                    <label class="control-label">Noise scale</label>
-                    <div class="slider-container">
-                        <input type="range" class="slider" id="noiseScaleSlider" min="0.1" max="4" step="0.1" value="1.5">
-                    </div>
-                    <div class="control-value" id="noiseScaleValue">1.50</div>
-                </div>
-                <div class="control-item">
-                    <label class="control-label">Noise speed</label>
-                    <div class="slider-container">
-                        <input type="range" class="slider" id="noiseSpeedSlider" min="0" max="3" step="0.1" value="1">
-                    </div>
-                    <div class="control-value" id="noiseSpeedValue">1.00</div>
-                </div>
-                <div class="control-item">
-                    <label class="control-label">Energy</label>
-                    <div class="slider-container">
-                        <input type="range" class="slider" id="energySlider" min="0" max="1" step="0.05" value="0.7">
-                    </div>
-                    <div class="control-value" id="energyValue">0.70</div>
-                </div>
-                <div class="control-item">
-                    <label class="control-label">Cursor halo radius</label>
-                    <div class="slider-container">
-                        <input type="range" class="slider" id="mouseHaloRadiusSlider" min="0.05" max="0.3" step="0.01" value="0.15">
-                    </div>
-                    <div class="control-value" id="mouseHaloRadiusValue">0.15</div>
-                </div>
-                <div class="control-item">
-                    <label class="control-label">Cursor halo strength</label>
-                    <div class="slider-container">
-                        <input type="range" class="slider" id="mouseHaloStrengthSlider" min="0" max="2" step="0.1" value="1">
-                    </div>
-                    <div class="control-value" id="mouseHaloStrengthValue">1.00</div>
-                </div>
-            </div>
-            
+            <div class="control-panel-inner">
+                <div class="control-panel-content">
             <!-- Particle System -->
             <div class="control-group">
                 <div class="control-group-title">Particle System</div>
                 <div class="control-item">
                     <label class="control-label">Particle Size</label>
                     <div class="slider-container">
-                        <input type="range" class="slider" id="particleSizeSlider" min="0.009" max="0.08" step="0.002" value="0.04">
+                        <input type="range" class="slider" id="particleSizeSlider" min="0.009" max="0.08" step="0.002" value="0.015">
                     </div>
-                    <div class="control-value" id="particleSizeValue">0.040</div>
+                    <div class="control-value" id="particleSizeValue">0.015</div>
                 </div>
                 <div class="control-item">
                     <label class="control-label">Particle Count</label>
                     <div class="slider-container">
-                        <input type="range" class="slider" id="particleCountSlider" min="100" max="2500" step="100" value="400">
+                        <input type="range" class="slider" id="particleCountSlider" min="50" max="2500" step="10" value="1200">
                     </div>
-                    <div class="control-value" id="particleCountValue">400</div>
+                    <div class="control-value" id="particleCountValue">1200</div>
                 </div>
             </div>
             
@@ -563,8 +442,6 @@
                     </div>
                     <div class="control-value" id="clusterValue">1.00</div>
                 </div>
-            </div>
-                    </div>
                 </div>
             </div>
         </div>

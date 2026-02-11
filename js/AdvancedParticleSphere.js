@@ -16,22 +16,23 @@ class AdvancedParticleSphere {
         this.clock = null;
         
         // Particle system parameters
-        this.particleCount = 400;
-        this.particleSize = 0.04;
+        this.particleCount = 1200;
+        this.particleSize = 0.015;
         this.sphereRadius = 6.0; // Much bigger cluster
         this.scatterRadius = 20; // Much larger to fill the screen
         
-        // Material properties
+        // Material properties: metal orb look (MeshPhysicalMaterial PBR)
         this.materialProperties = {
-            metalness: 0.9,
-            roughness: 0.1,
-            clearcoat: 0.8,
+            metalness: 0.92,
+            roughness: 0.08,
+            clearcoat: 0.65,
+            clearcoatRoughness: 0.04,
             ior: 1.5,
             transmission: 0.0,
             thickness: 0.5,
-            color: 0xffffff, // Pure white
-            emissive: 0x333333, // Subtle gray glow
-            emissiveIntensity: 0.05
+            color: 0xc8d4e0,
+            emissive: 0x222228,
+            emissiveIntensity: 0.15
         };
         
         // Animation parameters
@@ -64,29 +65,19 @@ class AdvancedParticleSphere {
         this.cameraMovementSpeed = 0;
         this.isCameraMoving = false;
         
-        // Effect mode: 'default' | 'breathingGalaxy'
+        // Effect mode: 'default' | 'unified'
         this.mode = 'default';
         
-        // Breathing Galaxy params (synced to shader uniforms)
-        this.breathingGalaxyParams = {
-            breathEnabled: true,
-            breathAmp: 0.15,
-            breathSpeed: 1.2,
-            orbitEnabled: true,
-            orbitSpeed: 0.4,
-            noiseEnabled: true,
-            noiseAmp: 0.2,
-            noiseScale: 1.5,
-            noiseSpeed: 1.0,
-            energy: 0.7,
-            mouseHaloRadius: 0.15,
-            mouseHaloStrength: 1.0
+        // Unified mode: field/shape/noise/shading/interaction presets + blend
+        this.unifiedState = {
+            category: 'field',
+            primary: 'orbitals',
+            secondary: '',
+            blend: 0
         };
-        
-        // Galaxy points mesh (ShaderMaterial); only visible when mode === 'breathingGalaxy'
-        this.pointsMesh = null;
-        this.galaxyGeometry = null;
-        this.pointsMaterial = null;
+        this.unifiedMesh = null;
+        this.unifiedGeometry = null;
+        this.unifiedMaterial = null;
         this.mouseNormalized = { x: 0.5, y: 0.5 };
         this.mouseActive = 0;
         
@@ -116,11 +107,12 @@ class AdvancedParticleSphere {
         // Create renderer with enhanced settings
         this.renderer = new THREE.WebGLRenderer({ 
             antialias: true,
-            alpha: true,
+            alpha: false,
             powerPreference: "high-performance"
         });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        this.renderer.setClearColor(0x000000, 1);
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -171,12 +163,12 @@ class AdvancedParticleSphere {
      * Setup enhanced lighting for metallic materials
      */
     setupLighting() {
-        // Ambient light for overall illumination
-        const ambientLight = new THREE.AmbientLight(0x404040, 0.3);
+        // Ambient light so the sphere is always visible
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
         this.scene.add(ambientLight);
         
         // Main directional light
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
         directionalLight.position.set(10, 10, 5);
         directionalLight.castShadow = true;
         directionalLight.shadow.mapSize.width = 2048;
@@ -215,21 +207,22 @@ class AdvancedParticleSphere {
         // Create particle geometry
         const particleGeometry = new THREE.SphereGeometry(this.particleSize, 16, 16);
         
-        // Create MeshPhysicalMaterial for metallic space particles
+        // MeshPhysicalMaterial: metal orb PBR (reflectivity, clearcoat, env map when set)
         const particleMaterial = new THREE.MeshPhysicalMaterial({
             color: this.materialProperties.color,
             metalness: this.materialProperties.metalness,
             roughness: this.materialProperties.roughness,
             clearcoat: this.materialProperties.clearcoat,
-            clearcoatRoughness: 0.05,
+            clearcoatRoughness: this.materialProperties.clearcoatRoughness ?? 0.05,
             ior: this.materialProperties.ior,
             reflectivity: 1.0,
             emissive: this.materialProperties.emissive,
             emissiveIntensity: this.materialProperties.emissiveIntensity,
             transparent: true,
-            opacity: 0.95,
-            envMapIntensity: 1.2
+            opacity: 0.98,
+            envMapIntensity: 1.0
         });
+        if (this.scene.environment) particleMaterial.envMap = this.scene.environment;
         
         // Create particles in a spherical distribution
         for (let i = 0; i < this.particleCount; i++) {
@@ -268,175 +261,121 @@ class AdvancedParticleSphere {
             this.particleGroup.add(particle);
         }
         this.updateRestPositions();
-        this.createGalaxyPoints();
     }
     
     /**
-     * Create or recreate the Points mesh used for Breathing Galaxy mode (shader-driven).
-     * Uses same particle count and copies rest positions each frame when mode is active.
+     * Unified mode: single Points mesh with vertex shader implementing field + shape + noise.
      */
-    createGalaxyPoints() {
-        if (this.pointsMesh) {
-            this.scene.remove(this.pointsMesh);
-            this.galaxyGeometry.dispose();
-            this.pointsMaterial.dispose();
-        }
-        const positions = new Float32Array(this.particleCount * 3);
-        for (let i = 0; i < this.particleCount; i++) {
-            const p = this.particles[i].userData.restPosition;
-            positions[i * 3] = p.x;
-            positions[i * 3 + 1] = p.y;
-            positions[i * 3 + 2] = p.z;
-        }
-        this.galaxyGeometry = new THREE.BufferGeometry();
-        const posAttr = new THREE.BufferAttribute(positions, 3);
-        if (posAttr.setUsage) posAttr.setUsage(THREE.DynamicDrawUsage);
-        else if (typeof THREE.DynamicDrawUsage !== 'undefined') posAttr.usage = THREE.DynamicDrawUsage;
-        this.galaxyGeometry.setAttribute('position', posAttr);
-        this.galaxyGeometry.computeBoundingSphere();
-        
-        const uniforms = {
-            u_time: { value: 0 },
-            u_breathEnabled: { value: this.breathingGalaxyParams.breathEnabled ? 1 : 0 },
-            u_breathAmp: { value: this.breathingGalaxyParams.breathAmp },
-            u_breathSpeed: { value: this.breathingGalaxyParams.breathSpeed },
-            u_orbitEnabled: { value: this.breathingGalaxyParams.orbitEnabled ? 1 : 0 },
-            u_orbitSpeed: { value: this.breathingGalaxyParams.orbitSpeed },
-            u_noiseEnabled: { value: this.breathingGalaxyParams.noiseEnabled ? 1 : 0 },
-            u_noiseAmp: { value: this.breathingGalaxyParams.noiseAmp },
-            u_noiseScale: { value: this.breathingGalaxyParams.noiseScale },
-            u_noiseSpeed: { value: this.breathingGalaxyParams.noiseSpeed },
-            u_energy: { value: this.breathingGalaxyParams.energy },
-            u_mouse: { value: new THREE.Vector2(0.5, 0.5) },
-            u_mouseActive: { value: 0 },
-            u_mouseHaloRadius: { value: this.breathingGalaxyParams.mouseHaloRadius },
-            u_mouseHaloStrength: { value: this.breathingGalaxyParams.mouseHaloStrength },
-            u_basePointSize: { value: Math.max(48, this.particleSize * 500) }
-        };
-        
-        this.pointsMaterial = new THREE.ShaderMaterial({
-            uniforms,
-            vertexShader: this.getGalaxyVertexShader(),
-            fragmentShader: this.getGalaxyFragmentShader(),
-            transparent: true,
-            depthWrite: false,
-            depthTest: true,
-            blending: THREE.NormalBlending
-        });
-        
-        this.pointsMesh = new THREE.Points(this.galaxyGeometry, this.pointsMaterial);
-        this.pointsMesh.frustumCulled = false;
-        this.pointsMesh.visible = false;
-        this.scene.add(this.pointsMesh);
-    }
-    
-    /**
-     * Vertex shader for Breathing Galaxy: breathing, noise ripples, orbit, pass NDC for halo.
-     */
-    getGalaxyVertexShader() {
-        return `
-            attribute vec3 position;
-            uniform float u_time;
-            uniform float u_breathEnabled;
-            uniform float u_breathAmp;
-            uniform float u_breathSpeed;
-            uniform float u_orbitEnabled;
-            uniform float u_orbitSpeed;
-            uniform float u_noiseEnabled;
-            uniform float u_noiseAmp;
-            uniform float u_noiseScale;
-            uniform float u_noiseSpeed;
-            uniform float u_energy;
-            uniform float u_basePointSize;
-            varying vec2 v_ndc;
-            varying vec3 v_worldPos;
-            varying float v_radiusNorm;
+    createUnifiedPoints() {
+        try {
+            if (this.unifiedMesh) {
+                this.scene.remove(this.unifiedMesh);
+                if (this.unifiedGeometry) this.unifiedGeometry.dispose();
+                if (this.unifiedMaterial) this.unifiedMaterial.dispose();
+            }
+            if (!this.particles.length) return;
+            const positions = new Float32Array(this.particleCount * 3);
+            for (let i = 0; i < this.particleCount; i++) {
+                const p = this.particles[i].userData.restPosition;
+                if (!p) continue;
+                positions[i * 3] = p.x;
+                positions[i * 3 + 1] = p.y;
+                positions[i * 3 + 2] = p.z;
+            }
+            this.unifiedGeometry = new THREE.BufferGeometry();
+            const posAttr = new THREE.BufferAttribute(positions, 3);
+            if (posAttr.setUsage) posAttr.setUsage(THREE.DynamicDrawUsage);
+            else if (typeof THREE.DynamicDrawUsage !== 'undefined') posAttr.usage = THREE.DynamicDrawUsage;
+            this.unifiedGeometry.setAttribute('position', posAttr);
+            this.unifiedGeometry.computeBoundingSphere();
+            this.unifiedGeometry.setDrawRange(0, this.particleCount);
             
-            // Simple 3D value noise (-1 to 1)
-            float hash(vec3 p) {
-                return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453);
-            }
-            float noise3D(vec3 p) {
-                vec3 i = floor(p);
-                vec3 f = fract(p);
-                f = f * f * (3.0 - 2.0 * f);
-                float n = mix(
-                    mix(mix(hash(i), hash(i + vec3(1,0,0)), f.x),
-                        mix(hash(i + vec3(0,1,0)), hash(i + vec3(1,1,0)), f.x), f.y),
-                    mix(mix(hash(i + vec3(0,0,1)), hash(i + vec3(1,0,1)), f.x),
-                        mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y), f.z
-                );
-                return n * 2.0 - 1.0;
-            }
+            // ShaderMaterial: breathing + swirl in vertex; soft radial glow in fragment
+            this.unifiedMaterial = new THREE.ShaderMaterial({
+                uniforms: {
+                    uTime: { value: 0 },
+                    uSize: { value: 36 },
+                    uColorInner: { value: new THREE.Color(0.2, 0.5, 1.0) },
+                    uColorOuter: { value: new THREE.Color(0.9, 0.35, 1.0) },
+                    uBreathAmp: { value: 0.08 },
+                    uBreathSpeed: { value: 1.0 },
+                    uSwirlSpeed: { value: 0.3 }
+                },
+                vertexShader: this.getUnifiedVertexShader(),
+                fragmentShader: this.getUnifiedFragmentShader(),
+                transparent: true,
+                depthWrite: false,
+                depthTest: true,
+                blending: THREE.AdditiveBlending
+            });
+            
+            this.unifiedMesh = new THREE.Points(this.unifiedGeometry, this.unifiedMaterial);
+            this.unifiedMesh.frustumCulled = false;
+            this.unifiedMesh.visible = false;
+            this.scene.add(this.unifiedMesh);
+            
+            this.setUnifiedMode(this.unifiedState);
+        } catch (err) {
+            console.warn('Unified mode init failed:', err);
+        }
+    }
+    
+    getUnifiedVertexShader() {
+        return `
+            // Particle orb vertex: sphere positions, breathing along normal, swirl around Y.
+            // Outputs gl_Position, gl_PointSize; passes v_radiusNorm for optional fragment use.
+            attribute vec3 position;
+            uniform float uTime;
+            uniform float uSize;
+            uniform float uBreathAmp;
+            uniform float uBreathSpeed;
+            uniform float uSwirlSpeed;
+            varying float v_radiusNorm;
             
             void main() {
                 vec3 p = position;
                 float radius = length(p);
                 vec3 n = radius < 0.0001 ? vec3(1.0, 0.0, 0.0) : normalize(p);
                 
-                // Breathing: pulse radius in and out
-                float breath = u_breathEnabled * sin(u_time * u_breathSpeed) * u_breathAmp;
-                radius = radius * (1.0 + breath);
+                // Breathing: move in/out along sphere normal
+                float breath = uBreathAmp * sin(uTime * uBreathSpeed);
+                radius *= 1.0 + breath;
                 p = n * radius;
                 
-                // Noise ripples along normal
-                vec3 noisePos = n * u_noiseScale + vec3(0.0, 0.0, u_time * u_noiseSpeed);
-                float noiseVal = noise3D(noisePos);
-                float ripple = u_noiseEnabled * noiseVal * u_noiseAmp;
-                p += n * ripple;
-                
-                // Orbit rotation around Y
-                float angle = u_orbitEnabled * u_time * u_orbitSpeed;
+                // Swirl: rotate around Y axis
+                float angle = uTime * uSwirlSpeed;
                 float c = cos(angle);
                 float s = sin(angle);
                 p.xz = mat2(c, -s, s, c) * p.xz;
                 
                 v_radiusNorm = length(p);
-                v_worldPos = (modelMatrix * vec4(p, 1.0)).xyz;
-                vec4 clipPos = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
-                gl_Position = clipPos;
-                v_ndc = clipPos.xy / clipPos.w;
-                gl_PointSize = u_basePointSize * (1.0 + u_energy * 0.5);
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+                gl_PointSize = uSize;
             }
         `;
     }
     
-    /**
-     * Fragment shader: galaxy gradient + cursor halo.
-     */
-    getGalaxyFragmentShader() {
+    getUnifiedFragmentShader() {
         return `
+            // Soft glowing points: circular falloff from gl_PointCoord, radial gradient inner->outer.
+            // Additive blending is set on the material in JS.
             precision mediump float;
-            uniform float u_energy;
-            uniform vec2 u_mouse;
-            uniform float u_mouseActive;
-            uniform float u_mouseHaloRadius;
-            uniform float u_mouseHaloStrength;
-            varying vec2 v_ndc;
-            varying vec3 v_worldPos;
+            uniform vec3 uColorInner;
+            uniform vec3 uColorOuter;
             varying float v_radiusNorm;
             
             void main() {
-                // Soft circular point
-                vec2 c = gl_PointCoord * 2.0 - 1.0;
-                float d = dot(c, c);
+                vec2 uv = gl_PointCoord * 2.0 - 1.0;
+                float d = length(uv);
                 if (d > 1.0) discard;
-                float alpha = 1.0 - smoothstep(0.2, 1.0, d);
                 
-                // Galaxy-like gradient: inner cool blue to outer magenta
-                vec3 innerColor = vec3(0.2, 0.5, 1.0);
-                vec3 outerColor = vec3(0.9, 0.2, 1.0);
-                float t = clamp(v_radiusNorm / 10.0, 0.0, 1.0);
-                vec3 baseColor = mix(innerColor, outerColor, t);
-                baseColor *= (0.85 + u_energy * 0.35);
+                // Circular soft falloff (no square sprites)
+                float alpha = 1.0 - smoothstep(0.15, 0.95, d);
                 
-                // Cursor halo in 0-1 screen space (v_ndc is NDC so *0.5+0.5)
-                vec2 screenPos = v_ndc * 0.5 + 0.5;
-                float dist = distance(screenPos, u_mouse);
-                float halo = u_mouseActive * smoothstep(u_mouseHaloRadius, 0.0, dist) * u_mouseHaloStrength * u_energy;
-                vec3 color = baseColor + vec3(halo, halo * 0.9, halo);
+                // Radial gradient: center = inner, edge = outer
+                vec3 color = mix(uColorInner, uColorOuter, d);
                 
-                gl_FragColor = vec4(color, alpha * (0.9 + u_energy * 0.1));
+                gl_FragColor = vec4(color, alpha);
             }
         `;
     }
@@ -669,44 +608,32 @@ class AdvancedParticleSphere {
     
     /**
      * Update particle positions with lightspeed scatter effect and interaction modes.
-     * When mode is breathingGalaxy, we only update the Points geometry from rest positions and skip mesh updates.
      */
     updateParticles() {
         const time = this.clock.getElapsedTime();
         const dt = Math.min(0.016, this.clock.getDelta());
         
-        // Breathing Galaxy mode: feed rest positions to Points mesh and hide mesh group
-        if (this.mode === 'breathingGalaxy') {
-            // Lazy-create points mesh if missing (e.g. after error or late init)
-            if (!this.pointsMesh || !this.galaxyGeometry) {
-                this.createGalaxyPoints();
-            }
-            if (this.pointsMesh && this.galaxyGeometry && this.particles.length > 0 && this.particles.length === this.particleCount) {
-                this.particleGroup.visible = false;
-                this.pointsMesh.visible = true;
-                const posAttr = this.galaxyGeometry.getAttribute('position');
-                if (posAttr && posAttr.count >= this.particleCount) {
-                    for (let i = 0; i < this.particleCount; i++) {
-                        const ud = this.particles[i].userData;
-                        let displayRest = ud.restPosition.clone();
-                        if (this.currentShape === 'ring') {
-                            const cos = Math.cos(this.shapeRotation);
-                            const sin = Math.sin(this.shapeRotation);
-                            const x = displayRest.x, y = displayRest.y;
-                            displayRest.x = x * cos - y * sin;
-                            displayRest.y = x * sin + y * cos;
+        if (this.mode === 'unified') {
+            if (!this.unifiedMesh || !this.unifiedGeometry) this.createUnifiedPoints();
+            this.particleGroup.visible = true;
+            if (this.unifiedMesh) {
+                this.unifiedMesh.visible = true;
+                if (this.unifiedGeometry && this.particles.length === this.particleCount) {
+                    const posAttr = this.unifiedGeometry.getAttribute('position');
+                    if (posAttr && posAttr.count >= this.particleCount) {
+                        for (let i = 0; i < this.particleCount; i++) {
+                            const p = this.particles[i].userData.restPosition;
+                            if (p) posAttr.setXYZ(i, p.x, p.y, p.z);
                         }
-                        posAttr.setXYZ(i, displayRest.x, displayRest.y, displayRest.z);
+                        posAttr.needsUpdate = true;
                     }
-                    posAttr.needsUpdate = true;
                 }
             }
-            if (this.currentShape === 'ring') this.shapeRotation += 0.02;
             return;
         }
         
         this.particleGroup.visible = true;
-        if (this.pointsMesh) this.pointsMesh.visible = false;
+        if (this.unifiedMesh) this.unifiedMesh.visible = false;
         
         // Track camera movement for lightspeed effect
         const currentCameraDistance = this.camera.position.length();
@@ -854,25 +781,9 @@ class AdvancedParticleSphere {
         const time = this.clock.getElapsedTime();
         const dt = this.clock.getDelta();
         
-        // Sync Breathing Galaxy uniforms (so panel changes apply immediately)
-        if (this.pointsMaterial && this.pointsMaterial.uniforms) {
-            const u = this.pointsMaterial.uniforms;
-            u.u_time.value = time;
-            u.u_mouse.value.set(this.mouseNormalized.x, this.mouseNormalized.y);
-            u.u_mouseActive.value = this.mouseActive;
-            u.u_breathEnabled.value = this.breathingGalaxyParams.breathEnabled ? 1 : 0;
-            u.u_breathAmp.value = this.breathingGalaxyParams.breathAmp;
-            u.u_breathSpeed.value = this.breathingGalaxyParams.breathSpeed;
-            u.u_orbitEnabled.value = this.breathingGalaxyParams.orbitEnabled ? 1 : 0;
-            u.u_orbitSpeed.value = this.breathingGalaxyParams.orbitSpeed;
-            u.u_noiseEnabled.value = this.breathingGalaxyParams.noiseEnabled ? 1 : 0;
-            u.u_noiseAmp.value = this.breathingGalaxyParams.noiseAmp;
-            u.u_noiseScale.value = this.breathingGalaxyParams.noiseScale;
-            u.u_noiseSpeed.value = this.breathingGalaxyParams.noiseSpeed;
-            u.u_energy.value = this.breathingGalaxyParams.energy;
-            u.u_mouseHaloRadius.value = this.breathingGalaxyParams.mouseHaloRadius;
-            u.u_mouseHaloStrength.value = this.breathingGalaxyParams.mouseHaloStrength;
-            u.u_basePointSize.value = Math.max(48, this.particleSize * 500);
+        if (this.unifiedMaterial && this.unifiedMaterial.uniforms) {
+            const u = this.unifiedMaterial.uniforms;
+            if (u.uTime) u.uTime.value = time;
         }
         
         // Update controls
@@ -997,26 +908,36 @@ class AdvancedParticleSphere {
     }
     
     /**
-     * Set effect mode: 'default' | 'breathingGalaxy'
+     * Set effect mode: 'default' | 'unified'
      */
     setMode(mode) {
-        this.mode = (mode === 'breathingGalaxy') ? 'breathingGalaxy' : 'default';
-    }
-    
-    /**
-     * Set a single Breathing Galaxy param (from control panel).
-     */
-    setBreathingGalaxyParam(key, value) {
-        if (this.breathingGalaxyParams.hasOwnProperty(key)) {
-            this.breathingGalaxyParams[key] = value;
+        this.mode = (mode === 'unified') ? 'unified' : 'default';
+        if (this.mode === 'unified') {
+            if (!this.unifiedMesh || !this.unifiedGeometry) this.createUnifiedPoints();
+            this.particleGroup.visible = true;
+            if (this.unifiedMesh) this.unifiedMesh.visible = true;
+        } else {
+            this.particleGroup.visible = true;
+            if (this.unifiedMesh) this.unifiedMesh.visible = false;
         }
     }
     
-    /**
-     * Set multiple Breathing Galaxy params at once.
-     */
-    setBreathingGalaxyParams(params) {
-        Object.assign(this.breathingGalaxyParams, params);
+    setUnifiedMode(state) {
+        if (state) this.unifiedState = { ...this.unifiedState, ...state };
+        if (this.unifiedMaterial && this.unifiedMaterial.uniforms) {
+            const u = this.unifiedMaterial.uniforms;
+            if (u.uSize) u.uSize.value = this.unifiedState.pointSize ?? 36;
+            if (u.uColorInner && this.unifiedState.colorInner) u.uColorInner.value.copy(this.unifiedState.colorInner);
+            if (u.uColorOuter && this.unifiedState.colorOuter) u.uColorOuter.value.copy(this.unifiedState.colorOuter);
+            if (u.uBreathAmp) u.uBreathAmp.value = this.unifiedState.breathAmp ?? 0.08;
+            if (u.uBreathSpeed) u.uBreathSpeed.value = this.unifiedState.breathSpeed ?? 1.0;
+            if (u.uSwirlSpeed) u.uSwirlSpeed.value = this.unifiedState.swirlSpeed ?? 0.3;
+        }
+    }
+    
+    _fieldPresetToFloat(id) {
+        const map = { orbitals: 0.0, vortex: 1.0, repulsor: 2.0, flocking: 3.0, pointCharge: 4.0 };
+        return map[id] !== undefined ? map[id] : 0.0;
     }
     
     /**
@@ -1053,6 +974,11 @@ class AdvancedParticleSphere {
      * Clean up resources
      */
     dispose() {
+        if (this.unifiedMesh) {
+            this.scene.remove(this.unifiedMesh);
+            if (this.unifiedGeometry) this.unifiedGeometry.dispose();
+            if (this.unifiedMaterial) this.unifiedMaterial.dispose();
+        }
         this.renderer.dispose();
         this.controls.dispose();
         window.removeEventListener('resize', this.onWindowResize);
