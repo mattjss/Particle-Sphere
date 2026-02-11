@@ -12,7 +12,7 @@ let lastFpsTime = performance.now();
  * Initialize the application when the page loads
  */
 function init() {
-    console.log('Initializing Advanced 3D Particle Sphere Visualizer...');
+    console.log('Initializing Galaxy Shader Orbs...');
     
     const loadingElement = document.getElementById('loading');
     const container = document.getElementById('container');
@@ -51,7 +51,7 @@ function init() {
     
     setupControlPanel();
     startFpsCounter();
-    console.log('Advanced 3D Particle Sphere Visualizer initialized successfully!');
+    console.log('Galaxy Shader Orbs initialized successfully!');
 }
 
 /**

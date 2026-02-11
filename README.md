@@ -1,11 +1,11 @@
-# 3D Particle Sphere Visualizer
+# Galaxy Shader Orbs
 
-A Three.js web application that creates an interactive 3D particle sphere visualizer inspired by the Perplexity AI Voice Mode. The application features hundreds of small sphere particles that can morph between different states and react to mouse interaction.
+A Three.js web application that creates interactive 3D shader orbs with metallic materials. Hundreds of small sphere particles morph between cluster and scatter states and react to mouse interaction.
 
 ## Features
 
 ### 🎯 Core Features
-- **3D Particle Sphere**: Hundreds of small sphere particles arranged on a spherical surface
+- **Galaxy Shader Orbs**: Hundreds of small sphere particles arranged on a spherical surface with metallic shader materials
 - **Real-time Morphing**: Smooth interpolation between tight spherical cluster and scattered cloud
 - **Automatic Rotation**: The particle cluster rotates in 3D space automatically
 - **Mouse Interaction**: Particles react to cursor proximity with repulsion and visual effects
@@ -80,11 +80,12 @@ A Three.js web application that creates an interactive 3D particle sphere visual
 
 ## File Structure
 ```
-Sphere Orbit/
+Galaxy Shader Orbs/
 ├── index.html          # Main HTML file
 ├── js/
-│   ├── ParticleSphere.js  # Core particle system class
-│   └── main.js           # Application initialization
+│   ├── AdvancedParticleSphere.js  # Core particle system with shader orbs
+│   ├── ParticleSphere.js         # Legacy particle system class
+│   └── main.js                   # Application initialization
 └── README.md           # This file
 ```
 

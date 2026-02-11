@@ -1,7 +1,7 @@
 {
-  "name": "3d-particle-sphere-visualizer",
+  "name": "galaxy-shader-orbs",
   "version": "1.0.0",
-  "description": "A Three.js web application that creates an interactive 3D particle sphere visualizer inspired by Perplexity AI Voice Mode",
+  "description": "Galaxy Shader Orbs – interactive 3D shader orbs with metallic materials and mouse interaction",
   "main": "index.html",
   "scripts": {
     "start": "python3 -m http.server 8000",
