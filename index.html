@@ -3,458 +3,86 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Galaxy Shader Orbs</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <title>Galaxy Shader Orb</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap" rel="stylesheet">
     <style>
-        /* Base UI: design tokens */
-        :root {
-            --app-font: 'Space Mono', monospace;
-            --space-1: 4px;
-            --space-2: 8px;
-            --space-3: 12px;
-            --space-4: 16px;
-            --space-5: 20px;
-            --space-6: 24px;
-            --radius-sm: 6px;
-            --radius-md: 8px;
-            --radius-lg: 12px;
-            --surface: hsl(222 14% 8%);
-            --surface-elevated: hsl(222 12% 11%);
-            --border: hsl(222 10% 18%);
-            --text: hsl(0 0% 98%);
-            --text-muted: hsl(222 8% 58%);
-            --text-faint: hsl(222 8% 45%);
-            --accent: hsl(222 80% 55%);
-            --overlay: rgba(0, 0, 0, 0.45);
-        }
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        html, body {
-            font-family: var(--app-font);
-            background: #000;
-            overflow: hidden;
-            color: var(--text);
-        }
-        
-        #container {
-            position: relative;
-            width: 100vw;
-            height: 100vh;
-            z-index: 0;
-            cursor: default;
-        }
-        
-        #container canvas {
-            display: block;
-            width: 100%;
-            height: 100%;
-            cursor: default;
-        }
-        
-        .loading {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            font-size: 18px;
-            color: var(--text);
-            font-weight: 500;
-        }
-        
-        /* CTA + Panel container */
-        .control-panel-container {
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { overflow: hidden; background: #000; font-family: 'Inter', system-ui, sans-serif; }
+        #container { width: 100vw; height: 100vh; }
+
+        .upload-ui {
             position: fixed;
-            top: var(--space-4);
-            right: var(--space-4);
-            z-index: 1000;
-        }
-        
-        .control-panel-cta {
-            display: inline-flex;
-            align-items: center;
-            gap: var(--space-2);
-            padding: var(--space-2) var(--space-4);
-            background: var(--surface-elevated);
-            color: var(--text);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-md);
-            font-size: 13px;
-            font-weight: 600;
-            font-family: var(--app-font);
-            cursor: pointer;
-            transition: background 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
-        }
-        
-        .control-panel-cta:hover {
-            background: hsl(222 12% 14%);
-            border-color: hsl(222 10% 25%);
-        }
-        
-        .control-panel-container.is-open .control-panel-cta {
-            opacity: 0;
-            pointer-events: none;
-        }
-        
-        /* Panel */
-        .control-panel-menu {
-            position: absolute;
-            top: 0;
-            right: 0;
-            width: 320px;
-            max-height: calc(100vh - var(--space-6));
+            bottom: 32px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 100;
             display: flex;
             flex-direction: column;
-            min-height: 0;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-lg);
-            font-family: var(--app-font);
-            overflow: hidden;
-            transform-origin: top right;
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.2s ease, transform 0.2s ease;
-        }
-        
-        .control-panel-container.is-open .control-panel-menu {
-            opacity: 1;
-            pointer-events: auto;
-        }
-        
-        .control-panel-inner {
-            flex: 1 1 auto;
-            min-height: 0;
-            padding: var(--space-4);
-            overflow-y: auto;
-            overflow-x: hidden;
-            -webkit-overflow-scrolling: touch;
-        }
-        
-        .control-panel-content {
-            opacity: 0;
-            transform: translateY(4px);
-            transition: opacity 0.2s ease 0.05s, transform 0.2s ease 0.05s;
-        }
-        
-        .control-panel-container.is-open .control-panel-content {
-            opacity: 1;
-            transform: translateY(0);
-        }
-        
-        .control-panel-backdrop {
-            position: fixed;
-            inset: 0;
-            background: var(--overlay);
-            opacity: 0;
-            pointer-events: none;
-            z-index: 999;
-            transition: opacity 0.2s ease;
-        }
-        
-        .control-panel-backdrop.visible {
-            opacity: 1;
-            pointer-events: auto;
-        }
-        
-        .control-panel-header {
-            display: flex;
-            justify-content: space-between;
             align-items: center;
-            padding: var(--space-3) var(--space-4);
-            background: var(--surface-elevated);
-            border-bottom: 1px solid var(--border);
-            flex-shrink: 0;
+            gap: 12px;
         }
-        
-        .control-panel-title {
+
+        .upload-preview {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .preview-thumb {
+            width: 80px;
+            height: 80px;
+            object-fit: cover;
+            border-radius: 12px;
+        }
+
+        .preview-filename {
+            font-size: 12px;
+            color: rgba(255,255,255,0.6);
+        }
+
+        .preview-clear {
+            font-size: 12px;
+            color: rgba(255,255,255,0.5);
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .preview-clear:hover { color: rgba(255,255,255,0.9); }
+
+        .upload-btn {
+            width: 180px;
+            height: 48px;
+            background: rgba(12,12,18,0.85);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 999px;
+            color: rgba(255,255,255,0.7);
             font-size: 14px;
-            font-weight: 600;
-            color: var(--text);
-            letter-spacing: 0.01em;
-        }
-        
-        .close-button {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 32px;
-            height: 32px;
-            background: transparent;
-            border: none;
-            border-radius: var(--radius-sm);
-            color: var(--text-muted);
-            font-size: 18px;
-            line-height: 1;
-            cursor: pointer;
-            transition: color 0.15s ease, background 0.15s ease;
-        }
-        
-        .close-button:hover {
-            color: var(--text);
-            background: hsl(222 10% 18%);
-        }
-        
-        .control-group {
-            margin-bottom: var(--space-5);
-        }
-        
-        .control-group:last-child { margin-bottom: 0; }
-        
-        .control-group-title {
-            font-size: 11px;
-            font-weight: 600;
-            color: var(--text-muted);
-            margin-bottom: var(--space-2);
-            letter-spacing: 0.04em;
-            text-transform: uppercase;
-        }
-        
-        .control-description {
-            font-size: 12px;
-            color: var(--text-muted);
-            line-height: 1.45;
-            margin-bottom: var(--space-3);
-        }
-        
-        .control-hint {
-            font-size: 11px;
-            color: var(--text-faint);
-            margin-top: var(--space-2);
-            margin-bottom: 0;
-            line-height: 1.4;
-        }
-        
-        .mode-tiles--display {
-            grid-template-columns: 1fr 1fr;
-        }
-        
-        .control-item {
-            margin-bottom: var(--space-3);
-        }
-        
-        .control-item:last-child { margin-bottom: 0; }
-        
-        .control-label {
-            display: block;
-            font-size: 12px;
-            font-weight: 500;
-            color: var(--text);
-            margin-bottom: var(--space-1);
-            letter-spacing: 0.01em;
-        }
-        
-        .control-label:has(input[type="checkbox"]) {
-            display: flex;
-            align-items: center;
-            gap: var(--space-2);
-        }
-        
-        .control-value {
-            font-size: 11px;
-            font-weight: 600;
-            color: var(--text-muted);
-            background: var(--surface-elevated);
-            border: 1px solid var(--border);
-            padding: var(--space-1) var(--space-2);
-            border-radius: var(--radius-sm);
-            min-width: 48px;
-            text-align: right;
-            font-variant-numeric: tabular-nums;
-            display: inline-block;
-            margin-top: var(--space-1);
-        }
-        
-        .slider-container {
-            margin-top: var(--space-1);
-        }
-        
-        .slider {
-            width: 100%;
-            height: 6px;
-            background: var(--border);
-            border-radius: var(--radius-sm);
-            outline: none;
-            -webkit-appearance: none;
-            appearance: none;
-        }
-        
-        .slider::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            appearance: none;
-            width: 14px;
-            height: 14px;
-            background: var(--text);
-            border-radius: 50%;
-            cursor: pointer;
-            transition: transform 0.12s ease;
-        }
-        
-        .slider::-webkit-slider-thumb:hover {
-            transform: scale(1.1);
-        }
-        
-        .slider::-moz-range-thumb {
-            width: 14px;
-            height: 14px;
-            background: var(--text);
-            border-radius: 50%;
-            cursor: pointer;
-            border: none;
-        }
-        
-        .control-select {
-            width: 100%;
-            padding: var(--space-2) var(--space-3);
-            font-size: 12px;
-            font-family: var(--app-font);
-            font-weight: 500;
-            color: var(--text);
-            background: var(--surface-elevated);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
-            cursor: pointer;
-            margin-top: var(--space-1);
-        }
-        
-        .control-checkbox {
-            width: 16px;
-            height: 16px;
-            accent-color: var(--accent);
+            font-family: inherit;
             cursor: pointer;
         }
-        
-        .mode-tiles {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            grid-auto-rows: minmax(40px, auto);
-            gap: var(--space-2);
-            margin-top: var(--space-2);
-        }
-        
-        .mode-tile {
-            padding: var(--space-2) var(--space-3);
-            min-height: 40px;
-            font-size: 11px;
-            font-family: var(--app-font);
-            font-weight: 600;
-            letter-spacing: 0.02em;
-            color: var(--text-muted);
-            background: var(--surface-elevated);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-md);
-            cursor: pointer;
-            transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            text-align: center;
-            line-height: 1.2;
-        }
-        
-        .mode-tile:hover {
-            color: var(--text);
-            background: hsl(222 10% 16%);
-            border-color: hsl(222 10% 22%);
-        }
-        
-        .mode-tile.active {
-            color: var(--text);
-            background: hsl(222 15% 18%);
-            border-color: var(--accent);
-        }
-        
-        .mode-options { display: none; }
-        .mode-options.visible { display: block; }
-        
-        .fps-display {
-            background: var(--surface-elevated);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-md);
-            padding: var(--space-3);
-            text-align: center;
-            font-size: 11px;
-            font-weight: 600;
-            color: var(--text-muted);
-        }
-        
-        .fps-value {
-            font-size: 18px;
-            font-weight: 700;
-            color: var(--text);
-        }
-        
+        .upload-btn:hover { color: rgba(255,255,255,0.9); }
     </style>
 </head>
 <body>
-    <div id="container">
-        <div class="loading" id="loading">Loading...</div>
-    </div>
-    
-    <div class="control-panel-backdrop" id="controlPanelBackdrop" aria-hidden="true"></div>
-    
-    <div class="control-panel-container" id="controlPanelContainer">
-        <button type="button" class="control-panel-cta" id="controlPanelCta" aria-expanded="false" aria-haspopup="true">Controls</button>
-        <div class="control-panel-menu" id="controlPanelMenu" role="dialog" aria-label="Controls" aria-hidden="true">
-            <div class="control-panel-header">
-                <h3 class="control-panel-title">Controls</h3>
-                <button class="close-button" id="closeControlPanel" type="button" aria-label="Close">×</button>
-            </div>
-            <div class="control-panel-inner">
-                <div class="control-panel-content">
-            <!-- Particle System -->
-            <div class="control-group">
-                <div class="control-group-title">Particle System</div>
-                <div class="control-item">
-                    <label class="control-label">Particle Size</label>
-                    <div class="slider-container">
-                        <input type="range" class="slider" id="particleSizeSlider" min="0.009" max="0.08" step="0.002" value="0.015">
-                    </div>
-                    <div class="control-value" id="particleSizeValue">0.015</div>
-                </div>
-                <div class="control-item">
-                    <label class="control-label">Particle Count</label>
-                    <div class="slider-container">
-                        <input type="range" class="slider" id="particleCountSlider" min="50" max="2500" step="10" value="1200">
-                    </div>
-                    <div class="control-value" id="particleCountValue">1200</div>
-                </div>
-            </div>
-            
-            <!-- Morphing -->
-            <div class="control-group">
-                <div class="control-group-title">Morphing</div>
-                <div class="control-item">
-                    <label class="control-label">Scatter</label>
-                    <div class="slider-container">
-                        <input type="range" class="slider" id="scatterSlider" min="0" max="1" step="0.01" value="0">
-                    </div>
-                    <div class="control-value" id="scatterValue">0.00</div>
-                </div>
-                <div class="control-item">
-                    <label class="control-label">Cluster</label>
-                    <div class="slider-container">
-                        <input type="range" class="slider" id="clusterSlider" min="0" max="1" step="0.01" value="1">
-                    </div>
-                    <div class="control-value" id="clusterValue">1.00</div>
-                </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Three.js library -->
+    <div id="container"></div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    
-    <!-- OrbitControls for camera manipulation -->
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-    
-    <!-- Main application script -->
-    <script src="js/AdvancedParticleSphere.js"></script>
-    <script src="js/main.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/Pass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.2/anime.min.js"></script>
+
+    <script src="js/shaders.js"></script>
+    <script src="js/particles.js"></script>
+    <script src="js/scene.js"></script>
+    <script src="js/morphEngine.js"></script>
+    <script src="js/uploadUI.js"></script>
+    <script src="main.js"></script>
 </body>
 </html>
